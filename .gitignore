@@ -11,8 +11,6 @@ backend/node_modules/
 
 # Builds
 frontend/dist/
-frontend/.output/
-frontend/.wrangler/
 backend/dist/
 dist/
 build/
@@ -24,6 +22,7 @@ coverage/
 logs/
 *.log
 .vite/
+.tanstack/
 .cache/
 .tmp/
 

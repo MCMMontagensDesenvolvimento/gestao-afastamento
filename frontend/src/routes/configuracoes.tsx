@@ -13,12 +13,14 @@ import {
   TABELA_CONTAINER,
   TabelaSkeleton,
   mensagemAmigavel,
-  usePaginacao,
   type AcaoLinha,
 } from "@/components/padroes";
 import { toast } from "sonner";
 
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth/session";
+import { catalogsPageQuery } from "@/hooks/use-catalogs";
+import { useServerPagination } from "@/hooks/use-server-pagination";
+import { createCatalog, updateCatalog, type CatalogWrite } from "@/services/catalogs";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +49,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  configQuery,
   ROTULO_CLASSIFICACAO,
   type Classificacao,
   type ItemSimples,
@@ -60,8 +61,7 @@ export const Route = createFileRoute("/configuracoes")({
       { title: "Configurações — Controle de Afastamentos MCM" },
       {
         name: "description",
-        content:
-          "Cadastre obras, funções, tipos de benefício, situações, andamentos e documentos.",
+        content: "Cadastre obras, funções, tipos de benefício, situações, andamentos e documentos.",
       },
       { property: "og:title", content: "Configurações — Controle de Afastamentos MCM" },
       {
@@ -83,6 +83,13 @@ const ABAS: Array<{ tabela: TabelaConfig; rotulo: string }> = [
 ];
 
 function PaginaConfiguracoes() {
+  const { can } = useAuth();
+  if (!can("settings.manage"))
+    return (
+      <AppLayout titulo="Configurações">
+        <EstadoErro mensagem="Você não tem permissão para administrar os cadastros auxiliares." />
+      </AppLayout>
+    );
   return (
     <AppLayout titulo="Configurações" descricao="Listas usadas nos cadastros do sistema.">
       <Tabs defaultValue="obras">
@@ -105,69 +112,79 @@ function PaginaConfiguracoes() {
 
 type Form = {
   nome: string;
-  codigo: string;
-  ordem_exibicao: string;
   classificacao_sistema: Classificacao;
 };
 
 const FORM_VAZIO: Form = {
   nome: "",
-  codigo: "",
-  ordem_exibicao: "",
   classificacao_sistema: "ATIVO",
 };
 
 function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string }) {
   const queryClient = useQueryClient();
-  const { data: itens = [], isLoading, isError, refetch } = useQuery(configQuery(tabela, false));
+  const pagination = useServerPagination();
+  const [busca, setBusca] = useState("");
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery(
+    catalogsPageQuery(tabela, {
+      page: pagination.pagina,
+      perPage: pagination.tamanho,
+      search: busca.trim() || undefined,
+    }),
+  );
+  const itens = data?.data ?? [];
+  const pag = {
+    ...pagination,
+    total: data?.meta.total ?? 0,
+    totalPaginas: data?.meta.totalPages ?? 1,
+  };
   const [aberto, setAberto] = useState(false);
   const [editando, setEditando] = useState<ItemSimples | null>(null);
   const [form, setForm] = useState<Form>(FORM_VAZIO);
   const [confirmar, setConfirmar] = useState<ItemSimples | null>(null);
-  const pag = usePaginacao(itens);
 
-  const temCodigo = tabela === "tipos_beneficio";
   const temClassificacao = tabela === "situacoes_afastamento";
-  const temOrdem = tabela !== "obras" && tabela !== "funcoes";
 
   function abrirNovo() {
     setEditando(null);
+    salvar.reset();
     setForm(FORM_VAZIO);
     setAberto(true);
   }
 
   function abrirEdicao(item: ItemSimples) {
+    salvar.reset();
     setEditando(item);
     setForm({
       nome: item.nome,
-      codigo: item.codigo ?? "",
-      ordem_exibicao: item.ordem_exibicao != null ? String(item.ordem_exibicao) : "",
       classificacao_sistema: item.classificacao_sistema ?? "ATIVO",
     });
     setAberto(true);
   }
 
   function invalidar() {
-    queryClient.invalidateQueries({ queryKey: ["config", tabela] });
+    pagination.setPagina(1);
+    queryClient.invalidateQueries({ queryKey: ["catalogs", tabela] });
+    if (tabela === "obras" || tabela === "funcoes") {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+    }
+    if (["obras", "funcoes", "tipos_beneficio", "situacoes_afastamento"].includes(tabela)) {
+      queryClient.invalidateQueries({ queryKey: ["leaves"] });
+      queryClient.invalidateQueries({ queryKey: ["employees", "history"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    }
+    if (tabela === "tipos_andamento_afastamento")
+      queryClient.invalidateQueries({ queryKey: ["progress"] });
+    if (tabela === "tipos_documento_afastamento")
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
   }
 
   const salvar = useMutation({
     mutationFn: async () => {
-      const payload: Record<string, unknown> = { nome: form.nome.trim() };
-      if (temCodigo) payload["codigo"] = form.codigo.trim() || null;
-      if (temClassificacao) payload["classificacao_sistema"] = form.classificacao_sistema;
-      if (temOrdem) payload["ordem_exibicao"] = Number(form.ordem_exibicao) || 0;
-
-      if (editando) {
-        const { error } = await supabase
-          .from(tabela)
-          .update(payload as never)
-          .eq("id", editando.id);
-        if (error) throw error;
-        return;
-      }
-      const { error } = await supabase.from(tabela).insert({ ...payload, ativo: true } as never);
-      if (error) throw error;
+      const payload: CatalogWrite = { nome: form.nome.trim() };
+      if (temClassificacao) payload.classificacao = form.classificacao_sistema;
+      if (editando) return updateCatalog(tabela, editando.id, payload);
+      return createCatalog(tabela, payload);
     },
     onSuccess: () => {
       invalidar();
@@ -179,11 +196,7 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
 
   const alternar = useMutation({
     mutationFn: async (item: ItemSimples) => {
-      const { error } = await supabase
-        .from(tabela)
-        .update({ ativo: !item.ativo } as never)
-        .eq("id", item.id);
-      if (error) throw error;
+      return updateCatalog(tabela, item.id, { ativo: !item.ativo });
     },
     onSuccess: () => {
       invalidar();
@@ -208,7 +221,9 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
         <div className="min-w-0">
           <h2 className="font-semibold">{rotulo}</h2>
           <p className="text-sm text-muted-foreground">
-            {isLoading ? "Carregando…" : `${itens.length} ${itens.length === 1 ? "registro" : "registros"}`}
+            {isLoading
+              ? "Carregando…"
+              : `${pag.total} ${pag.total === 1 ? "registro" : "registros"}`}
           </p>
         </div>
         <Button onClick={abrirNovo} className="shrink-0">
@@ -216,15 +231,42 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
         </Button>
       </div>
 
+      <div className="p-4">
+        <Label htmlFor={`busca-${tabela}`} className="sr-only">
+          Buscar em {rotulo}
+        </Label>
+        <Input
+          id={`busca-${tabela}`}
+          placeholder="Buscar por nome"
+          value={busca}
+          onChange={(e) => {
+            setBusca(e.target.value);
+            pagination.setPagina(1);
+          }}
+        />
+      </div>
+      {isFetching && !isLoading ? (
+        <p role="status" className="px-4 text-sm text-muted-foreground">
+          Atualizando…
+        </p>
+      ) : null}
       {isLoading ? (
         <TabelaSkeleton linhas={4} />
       ) : isError ? (
-        <EstadoErro className="m-4" aoTentarNovamente={() => refetch()} />
+        <EstadoErro
+          className="m-4"
+          mensagem={mensagemAmigavel(error)}
+          aoTentarNovamente={() => refetch()}
+        />
       ) : itens.length === 0 ? (
         <EstadoVazio
           className="m-4"
           titulo={`Nenhum registro em ${rotulo}.`}
-          descricao="Cadastre o primeiro item para usá-lo nas listas de seleção."
+          descricao={
+            busca
+              ? "Ajuste a busca para ver mais resultados."
+              : "Cadastre o primeiro item para usá-lo nas listas de seleção."
+          }
           acao={
             <Button size="sm" onClick={abrirNovo}>
               <Plus className="size-4" /> Novo registro
@@ -234,19 +276,15 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
       ) : (
         <>
           <ul className="divide-y divide-border md:hidden">
-            {pag.visiveis.map((item) => (
+            {itens.map((item) => (
               <li key={item.id} className="flex items-start gap-2 p-4">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">
-                    {temCodigo && item.codigo ? `${item.codigo} — ` : ""}
-                    {item.nome}
-                  </p>
+                  <p className="truncate font-medium">{item.nome}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <StatusBadge ativo={item.ativo} />
                     {temClassificacao && item.classificacao_sistema ? (
                       <span>{ROTULO_CLASSIFICACAO[item.classificacao_sistema]}</span>
                     ) : null}
-                    {temOrdem ? <span>Ordem {item.ordem_exibicao ?? "—"}</span> : null}
                   </div>
                 </div>
                 <AcoesLinha acoes={acoesDe(item)} compacto />
@@ -257,20 +295,15 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
             <Table containerClassName={TABELA_CONTAINER}>
               <TableHeader className={CABECALHO_FIXO}>
                 <TableRow>
-                  {temCodigo ? <TableHead>Código</TableHead> : null}
                   <TableHead>Nome</TableHead>
                   {temClassificacao ? <TableHead>Classificação</TableHead> : null}
-                  {temOrdem ? <TableHead>Ordem</TableHead> : null}
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pag.visiveis.map((item) => (
+                {itens.map((item) => (
                   <TableRow key={item.id}>
-                    {temCodigo ? (
-                      <TableCell className="font-mono text-xs">{item.codigo ?? "—"}</TableCell>
-                    ) : null}
                     <TableCell className="font-medium">{item.nome}</TableCell>
                     {temClassificacao ? (
                       <TableCell>
@@ -278,9 +311,6 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
                           ? ROTULO_CLASSIFICACAO[item.classificacao_sistema]
                           : "—"}
                       </TableCell>
-                    ) : null}
-                    {temOrdem ? (
-                      <TableCell className="tabular-nums">{item.ordem_exibicao ?? "—"}</TableCell>
                     ) : null}
                     <TableCell>
                       <StatusBadge ativo={item.ativo} />
@@ -297,34 +327,31 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
         </>
       )}
 
-      <Dialog open={aberto} onOpenChange={setAberto}>
+      <Dialog
+        open={aberto}
+        onOpenChange={(value) => {
+          if (!salvar.isPending) setAberto(value);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
               {editando ? "Editar" : "Novo"} — {rotulo}
             </DialogTitle>
           </DialogHeader>
+          {salvar.isError ? <EstadoErro mensagem={mensagemAmigavel(salvar.error)} /> : null}
           <div className="grid gap-4">
             <div>
               <Label htmlFor="config-nome">Nome *</Label>
               <Input
                 id="config-nome"
                 value={form.nome}
+                maxLength={200}
+                aria-required="true"
                 onChange={(e) => setForm({ ...form, nome: e.target.value })}
                 className="mt-1.5"
               />
             </div>
-            {temCodigo ? (
-              <div>
-                <Label htmlFor="config-codigo">Código</Label>
-                <Input
-                  id="config-codigo"
-                  value={form.codigo}
-                  onChange={(e) => setForm({ ...form, codigo: e.target.value })}
-                  className="mt-1.5"
-                />
-              </div>
-            ) : null}
             {temClassificacao ? (
               <div>
                 <Label htmlFor="config-classificacao">Classificação</Label>
@@ -345,18 +372,6 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
                 </Select>
               </div>
             ) : null}
-            {temOrdem ? (
-              <div>
-                <Label htmlFor="config-ordem">Ordem de exibição</Label>
-                <Input
-                  id="config-ordem"
-                  type="number"
-                  value={form.ordem_exibicao}
-                  onChange={(e) => setForm({ ...form, ordem_exibicao: e.target.value })}
-                  className="mt-1.5"
-                />
-              </div>
-            ) : null}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setAberto(false)} disabled={salvar.isPending}>
@@ -364,8 +379,8 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
             </Button>
             <Button
               onClick={() => {
-                if (!form.nome.trim()) {
-                  toast.error("Informe o nome.");
+                if (form.nome.trim().length < 2) {
+                  toast.error("Informe um nome com pelo menos 2 caracteres.");
                   return;
                 }
                 salvar.mutate();
@@ -392,7 +407,7 @@ function AbaConfig({ tabela, rotulo }: { tabela: TabelaConfig; rotulo: string })
         destrutivo={!!confirmar?.ativo}
         carregando={alternar.isPending}
         aoConfirmar={() =>
-          confirmar && alternar.mutate(confirmar, { onSettled: () => setConfirmar(null) })
+          confirmar && alternar.mutate(confirmar, { onSuccess: () => setConfirmar(null) })
         }
       />
     </div>

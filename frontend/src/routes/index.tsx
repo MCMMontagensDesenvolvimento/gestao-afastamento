@@ -1,6 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useAuth } from "@/lib/auth/session";
+import { errorMessage } from "@/lib/api/errors";
+import { useServerPagination } from "@/hooks/use-server-pagination";
+import { leavesPageQuery, leaveCountsQuery } from "@/hooks/use-leaves";
 import { Eye, Pencil, Plus } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
@@ -25,10 +29,8 @@ import {
   TABELA_CONTAINER,
   TabelaSkeleton,
   TODOS,
-  usePaginacao,
 } from "@/components/padroes";
 import {
-  afastamentosQuery,
   configQuery,
   corDaClassificacao,
   formatarData,
@@ -57,16 +59,16 @@ export const Route = createFileRoute("/")({
 
 function PaginaAfastados() {
   const navigate = useNavigate();
-  const {
-    data: afastamentos = [],
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery(afastamentosQuery());
-  const { data: obras = [] } = useQuery(configQuery("obras", false));
-  const { data: funcoes = [] } = useQuery(configQuery("funcoes", false));
-  const { data: beneficios = [] } = useQuery(configQuery("tipos_beneficio", false));
-  const { data: situacoes = [] } = useQuery(configQuery("situacoes_afastamento", false));
+  const { can } = useAuth();
+  const pag = useServerPagination();
+  const obrasRes = useQuery(configQuery("obras", false));
+  const obras = obrasRes.data ?? [];
+  const funcoesRes = useQuery(configQuery("funcoes", false));
+  const funcoes = funcoesRes.data ?? [];
+  const beneficiosRes = useQuery(configQuery("tipos_beneficio", false));
+  const beneficios = beneficiosRes.data ?? [];
+  const situacoesRes = useQuery(configQuery("situacoes_afastamento", false));
+  const situacoes = situacoesRes.data ?? [];
 
   const [busca, setBusca] = useState("");
   const [obraId, setObraId] = useState(TODOS);
@@ -75,32 +77,37 @@ function PaginaAfastados() {
   const [situacaoId, setSituacaoId] = useState(TODOS);
   const [aba, setAba] = useState<"TODOS" | Classificacao>("TODOS");
 
-  const contagem = useMemo(() => {
-    const base = { ATIVO: 0, ENCERRADO: 0, APOSENTADO: 0 };
-    for (const a of afastamentos) {
-      const c = a.situacoes_afastamento?.classificacao_sistema;
-      if (c) base[c] += 1;
-    }
-    return base;
-  }, [afastamentos]);
+  const params = {
+    page: pag.pagina,
+    perPage: pag.tamanho,
+    search: busca.trim(),
+    obraId: obraId === TODOS ? undefined : obraId,
+    funcaoId: funcaoId === TODOS ? undefined : funcaoId,
+    tipoBeneficioId: beneficioId === TODOS ? undefined : beneficioId,
+    situacaoId: situacaoId === TODOS ? undefined : situacaoId,
+    classificacao: aba === "TODOS" ? undefined : aba,
+    sortDirection: "desc",
+  };
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
+    ...leavesPageQuery(params),
+    enabled: can("leaves.read"),
+  });
+  const counts = useQuery({ ...leaveCountsQuery(), enabled: can("leaves.read") });
+  const lista = data?.data ?? [];
+  const erroFiltros = [obrasRes, funcoesRes, beneficiosRes, situacoesRes].find(
+    (query) => query.isError,
+  );
+  const contagem = counts.data;
+  const alterar = (setter: (value: string) => void) => (value: string) => {
+    setter(value);
+    pag.setPagina(1);
+  };
 
-  const lista = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-    return afastamentos.filter((a) => {
-      if (termo && !(a.colaboradores?.nome ?? "").toLowerCase().includes(termo)) return false;
-      if (obraId !== TODOS && a.obra_id !== obraId) return false;
-      if (funcaoId !== TODOS && a.funcao_id !== funcaoId) return false;
-      if (beneficioId !== TODOS && a.tipo_beneficio_id !== beneficioId) return false;
-      if (situacaoId !== TODOS && a.situacao_afastamento_id !== situacaoId) return false;
-      if (aba !== "TODOS" && a.situacoes_afastamento?.classificacao_sistema !== aba) return false;
-      return true;
-    });
-  }, [afastamentos, busca, obraId, funcaoId, beneficioId, situacaoId, aba]);
-
-  const pag = usePaginacao(lista);
-
-  const filtrosAtivos = [obraId, funcaoId, beneficioId, situacaoId].filter((v) => v !== TODOS).length;
+  const filtrosAtivos = [obraId, funcaoId, beneficioId, situacaoId].filter(
+    (v) => v !== TODOS,
+  ).length;
   function limpar() {
+    pag.setPagina(1);
     setBusca("");
     setObraId(TODOS);
     setFuncaoId(TODOS);
@@ -109,9 +116,9 @@ function PaginaAfastados() {
   }
 
   const cards = [
-    { rotulo: "Ativos", valor: contagem.ATIVO },
-    { rotulo: "Encerrados", valor: contagem.ENCERRADO },
-    { rotulo: "Aposentados", valor: contagem.APOSENTADO },
+    { rotulo: "Ativos", valor: contagem?.ATIVO ?? "—" },
+    { rotulo: "Encerrados", valor: contagem?.ENCERRADO ?? "—" },
+    { rotulo: "Aposentados", valor: contagem?.APOSENTADO ?? "—" },
   ];
 
   const pills: Array<{ chave: "TODOS" | Classificacao; rotulo: string }> = [
@@ -130,32 +137,50 @@ function PaginaAfastados() {
       icone: Eye,
       aoClicar: () => navigate({ to: "/afastamentos/$id", params: { id: a.id } }),
     },
-    {
-      rotulo: "Editar",
-      icone: Pencil,
-      aoClicar: () => navigate({ to: "/afastamentos/$id/editar", params: { id: a.id } }),
-    },
+    ...(can("leaves.update")
+      ? [
+          {
+            rotulo: "Editar",
+            icone: Pencil,
+            aoClicar: () => navigate({ to: "/afastamentos/$id/editar", params: { id: a.id } }),
+          },
+        ]
+      : []),
   ];
 
   const temFiltro = filtrosAtivos > 0 || busca.trim() !== "" || aba !== "TODOS";
+
+  if (!can("leaves.read"))
+    return (
+      <AppLayout titulo="Afastados">
+        <EstadoVazio
+          titulo="Acesso negado"
+          descricao="Você não possui permissão para consultar afastamentos."
+        />
+      </AppLayout>
+    );
 
   return (
     <AppLayout
       titulo="Afastados"
       descricao="Colaboradores com afastamento registrado."
       acoes={
-        <Button asChild>
-          <Link to="/afastamentos/novo">
-            <Plus className="size-4" /> Novo afastamento
-          </Link>
-        </Button>
+        can("leaves.create") ? (
+          <Button asChild>
+            <Link to="/afastamentos/novo">
+              <Plus className="size-4" /> Novo afastamento
+            </Link>
+          </Button>
+        ) : null
       }
     >
       <div className="grid grid-cols-3 gap-3">
         {cards.map((c) => (
           <div key={c.rotulo} className="rounded-md border border-border bg-card px-3 py-3 sm:px-4">
-            <p className="truncate text-xs uppercase tracking-wide text-muted-foreground">{c.rotulo}</p>
-            {isLoading ? (
+            <p className="truncate text-xs uppercase tracking-wide text-muted-foreground">
+              {c.rotulo}
+            </p>
+            {counts.isLoading ? (
               <Skeleton className="mt-2 h-7 w-10" />
             ) : (
               <p className="mt-1 text-2xl font-semibold tabular-nums">{c.valor}</p>
@@ -164,21 +189,38 @@ function PaginaAfastados() {
         ))}
       </div>
 
+      {erroFiltros ? (
+        <p role="alert" className="mt-4 text-sm text-destructive">
+          Os filtros de cadastro estão indisponíveis. {errorMessage(erroFiltros.error)}
+        </p>
+      ) : null}
       <div className="mt-5">
         <BarraFiltros
           busca={busca}
-          aoBuscar={setBusca}
+          aoBuscar={alterar(setBusca)}
           placeholderBusca="Nome do colaborador"
           filtrosAtivos={filtrosAtivos}
           aoLimpar={limpar}
         >
-          <FiltroSelect id="f-obra" rotulo="Obra" valor={obraId} aoMudar={setObraId} itens={obras} />
-          <FiltroSelect id="f-funcao" rotulo="Função" valor={funcaoId} aoMudar={setFuncaoId} itens={funcoes} />
+          <FiltroSelect
+            id="f-obra"
+            rotulo="Obra"
+            valor={obraId}
+            aoMudar={alterar(setObraId)}
+            itens={obras}
+          />
+          <FiltroSelect
+            id="f-funcao"
+            rotulo="Função"
+            valor={funcaoId}
+            aoMudar={alterar(setFuncaoId)}
+            itens={funcoes}
+          />
           <FiltroSelect
             id="f-beneficio"
             rotulo="Tipo de benefício"
             valor={beneficioId}
-            aoMudar={setBeneficioId}
+            aoMudar={alterar(setBeneficioId)}
             itens={beneficios}
             rotuloTodos="Todos"
           />
@@ -186,7 +228,7 @@ function PaginaAfastados() {
             id="f-situacao"
             rotulo="Situação"
             valor={situacaoId}
-            aoMudar={setSituacaoId}
+            aoMudar={alterar(setSituacaoId)}
             itens={situacoes}
           />
         </BarraFiltros>
@@ -199,7 +241,10 @@ function PaginaAfastados() {
             type="button"
             role="tab"
             aria-selected={aba === p.chave}
-            onClick={() => setAba(p.chave)}
+            onClick={() => {
+              setAba(p.chave);
+              pag.setPagina(1);
+            }}
             className={`min-h-9 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               aba === p.chave
                 ? "border-primary bg-primary/10 font-medium text-primary"
@@ -211,39 +256,65 @@ function PaginaAfastados() {
         ))}
       </div>
 
+      {counts.isError ? (
+        <EstadoErro
+          mensagem="Não foi possível carregar os totais."
+          aoTentarNovamente={() => counts.refetch()}
+        />
+      ) : null}
+      {isFetching && !isLoading ? (
+        <p role="status" className="mt-3 text-xs text-muted-foreground">
+          Atualizando afastamentos…
+        </p>
+      ) : null}
       <div className="mt-4 overflow-hidden rounded-md border border-border bg-card">
         {isLoading ? (
           <TabelaSkeleton />
         ) : isError ? (
           <EstadoErro
             className="m-4"
-            mensagem="Não foi possível carregar os afastamentos."
+            mensagem={errorMessage(error)}
             aoTentarNovamente={() => refetch()}
           />
         ) : lista.length === 0 ? (
           <EstadoVazio
             className="m-4"
-            titulo={temFiltro ? "Nenhum afastamento corresponde aos filtros." : "Nenhum afastamento registrado."}
-            descricao={temFiltro ? "Ajuste ou limpe os filtros para ver mais resultados." : "Cadastre o primeiro afastamento para começar o acompanhamento."}
+            titulo={
+              temFiltro
+                ? "Nenhum afastamento corresponde aos filtros."
+                : "Nenhum afastamento registrado."
+            }
+            descricao={
+              temFiltro
+                ? "Ajuste ou limpe os filtros para ver mais resultados."
+                : "Cadastre o primeiro afastamento para começar o acompanhamento."
+            }
             acao={
               temFiltro ? (
-                <Button variant="outline" size="sm" onClick={() => { limpar(); setAba("TODOS"); }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    limpar();
+                    setAba("TODOS");
+                  }}
+                >
                   Limpar filtros
                 </Button>
-              ) : (
+              ) : can("leaves.create") ? (
                 <Button asChild size="sm">
                   <Link to="/afastamentos/novo">
                     <Plus className="size-4" /> Novo afastamento
                   </Link>
                 </Button>
-              )
+              ) : null
             }
           />
         ) : (
           <>
             {/* Celular: cartões */}
             <ul className="divide-y divide-border md:hidden">
-              {pag.visiveis.map((a) => (
+              {lista.map((a) => (
                 <li key={a.id} className="flex items-start gap-2 p-4">
                   <Link
                     to="/afastamentos/$id"
@@ -256,7 +327,9 @@ function PaginaAfastados() {
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                       <SituacaoBadge a={a} />
-                      <span className="text-muted-foreground">Afastado em {formatarData(a.data_afastamento)}</span>
+                      <span className="text-muted-foreground">
+                        Afastado em {formatarData(a.data_afastamento)}
+                      </span>
                     </div>
                   </Link>
                   <AcoesLinha acoes={acoesDe(a)} compacto />
@@ -275,22 +348,37 @@ function PaginaAfastados() {
                     <TableHead className="hidden 2xl:table-cell">Tipo de benefício</TableHead>
                     <TableHead>Situação</TableHead>
                     <TableHead className="whitespace-nowrap">Afastamento</TableHead>
-                    <TableHead className="hidden whitespace-nowrap xl:table-cell">Início do benefício</TableHead>
-                    <TableHead className="hidden whitespace-nowrap lg:table-cell">Fim do benefício</TableHead>
+                    <TableHead className="hidden whitespace-nowrap lg:table-cell">
+                      Fim do benefício
+                    </TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pag.visiveis.map((a) => (
+                  {lista.map((a) => (
                     <TableRow key={a.id}>
-                      <TableCell className="max-w-[220px] truncate font-medium">{a.colaboradores?.nome ?? "—"}</TableCell>
+                      <TableCell className="max-w-[220px] truncate font-medium">
+                        {a.colaboradores?.nome ?? "—"}
+                      </TableCell>
                       <TableCell>{a.obras?.nome ?? "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{a.funcoes?.nome ?? "—"}</TableCell>
-                      <TableCell className="hidden max-w-[240px] truncate 2xl:table-cell" title={nomeBeneficio(a)}>{nomeBeneficio(a)}</TableCell>
-                      <TableCell><SituacaoBadge a={a} /></TableCell>
-                      <TableCell className="tabular-nums">{formatarData(a.data_afastamento)}</TableCell>
-                      <TableCell className="hidden tabular-nums xl:table-cell">{formatarData(a.data_inicio_beneficio)}</TableCell>
-                      <TableCell className="hidden tabular-nums lg:table-cell">{formatarData(a.data_fim_beneficio)}</TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {a.funcoes?.nome ?? "—"}
+                      </TableCell>
+                      <TableCell
+                        className="hidden max-w-[240px] truncate 2xl:table-cell"
+                        title={nomeBeneficio(a)}
+                      >
+                        {nomeBeneficio(a)}
+                      </TableCell>
+                      <TableCell>
+                        <SituacaoBadge a={a} />
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {formatarData(a.data_afastamento)}
+                      </TableCell>
+                      <TableCell className="hidden tabular-nums lg:table-cell">
+                        {formatarData(a.data_fim_beneficio)}
+                      </TableCell>
                       <TableCell className="text-right">
                         <AcoesLinha acoes={acoesDe(a)} />
                       </TableCell>
@@ -299,7 +387,11 @@ function PaginaAfastados() {
                 </TableBody>
               </Table>
             </div>
-            <Paginacao {...pag} />
+            <Paginacao
+              {...pag}
+              total={data?.meta.total ?? 0}
+              totalPaginas={data?.meta.totalPages ?? 1}
+            />
           </>
         )}
       </div>

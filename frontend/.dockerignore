@@ -1,14 +1,13 @@
 node_modules
 dist
-.output
 build
 coverage
 .env
 .env.*
-!.env.example
 .git
 *.log
 logs
 .cache
 .tmp
+.tanstack
 .DS_Store

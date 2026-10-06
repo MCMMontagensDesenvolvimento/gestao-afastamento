@@ -1,8 +1,8 @@
 # 09 — Frontend — MCM Gestão de Afastados
 
-**Versão do documento:** 1.0  
-**Data:** 05/10/2026  
-**Status:** Direção frontend aprovada para refinamento, exportação e implementação full stack  
+**Versão do documento:** 1.1
+**Data:** 06/10/2026
+**Status:** Fase 3 implementada; validação autenticada depende da App Registration Microsoft
 **Produto:** MCM Gestão de Afastados  
 **Objetivo da fase:** transformar o frontend atual em uma base sustentável, integrada a backend real e pronta para handoff técnico à Milena.
 
@@ -26,35 +26,62 @@ O frontend final deverá:
 
 ---
 
-## 2. Diagnóstico frontend atual
+## 2. Estado implementado — Fase 3
 
-### 2.1 Pontos positivos
+O frontend usa exclusivamente `/api/v1`, através de API client centralizado com
+JSON/multipart, `credentials: include`, erros oficiais e `requestId`. Não há acesso
+direto a banco ou storage. Supabase, Lovable e Bun foram removidos da stack do
+produto. O build é SPA Vite/React, com TanStack Router e TanStack Query; não há
+TanStack Start, Nitro, Wrangler nem runtime frontend server-side.
 
-- React/TypeScript funcional;
-- Tailwind CSS e componentes base consistentes com shadcn/Radix;
-- TanStack Query já disponível;
-- dashboard real com Recharts;
-- fluxo funcional de afastamentos;
-- histórico e documentos presentes;
-- rotas atuais coerentes com o domínio;
-- persistência atual suficiente para validar fluxos e dados;
-- componente de notificações funcional.
+`src/main.tsx` monta a SPA; `routes/__root.tsx` valida sessão e capabilities antes
+de renderizar as rotas privadas. `/login` é pública e `/usuarios` administra
+usuários, papéis e permissões existentes, sem criar SMS nem grants finais.
 
-### 2.2 Gaps atuais
+Fluxo implementado:
 
-- ausência de autenticação real;
-- ausência de autorização real;
-- frontend acessa persistência diretamente;
-- mutações espalhadas em pages/components;
-- ausência de API client do produto;
-- services por domínio ainda insuficientes;
-- forms sem padrão consolidado React Hook Form + Zod;
-- uso recorrente de casts inseguros;
-- estados de erro/loading incompletos;
-- confirmação destrutiva inconsistente;
-- responsividade de tabelas dependente de scroll horizontal;
-- ausência de testes automatizados relevantes;
-- estrutura ainda contém elementos técnicos herdados do protótipo que deverão ser removidos após exportação.
+```text
+Page / Component → Query / Mutation Hook → Domain Service → API Client → /api/v1
+```
+
+Estrutura concreta:
+
+- `src/lib/api`: client, erros e envelopes de resposta;
+- `src/lib/auth/session.ts`: query de sessão, `useAuth().can()` e logout;
+- `src/lib/query/keys.ts`: prefixos de domínios e sessão;
+- `src/services`: auth, access, users, catalogs, employees, leaves, progress,
+  documents, notifications e dashboard;
+- `src/hooks`: queries e mutations dos módulos, paginação server-side;
+- `src/lib/dados.ts`: somente modelos de apresentação, formatação e reexports;
+- `src/routes` e `src/components`: UI existente preservada, novos login/usuários;
+- `index.html`, `vite.config.ts`, `nginx.conf`: entrada, build e fallback SPA.
+
+Queries usam `['auth','me']`, `['users',...]`, `['roles']`, `['permissions']`,
+`['catalogs',...]`, `['employees','list',...]`, `['employees','detail',id]`,
+`['employees','history',id,...]`, `['leaves','list',...]`,
+`['leaves','detail',id]`, `['progress',id]`, `['documents',id]`,
+`['notifications',...]` e `['dashboard']`. `['audit']` está reservado; não foi
+criada tela de auditoria complexa nesta fase. Mutations invalidam os domínios
+relacionados, sem reload total.
+
+Afastamentos, colaboradores, configurações e usuários filtram/paginam no
+servidor (10, 20, 50, 100). Lookup de colaboradores também possui busca e páginas;
+catálogos de referência são obtidos por páginas da API. Andamentos, documentos,
+papéis, permissões e notificações seguem seus contratos atuais não paginados.
+
+Limites explicitamente registrados antes da adaptação no Decision Log: a API
+não persiste alguns campos do protótipo; eles foram retirados dos formulários.
+Não houve redefinição de regras pendentes. Filtro de obra no dashboard permanece
+indisponível e duração informa `pending_final_validation`; nenhum cálculo
+substituto é feito no browser. Catálogos de apoio ainda exigem `settings.manage`.
+O filtro de classificação foi acrescentado à API de afastamentos para preservar
+as abas existentes; a edição valida atividade apenas das referências alteradas,
+mantendo vínculos históricos inativos.
+
+A paleta, CSS, tipografia, componentes base, tabelas/cards e navegação responsiva
+foram preservados. O logo agora é um PNG local, sem resolvedor de assets externo.
+A equivalência visual completa dos módulos autenticados precisa ser homologada
+com sessão Microsoft real.
 
 ---
 
@@ -67,7 +94,7 @@ frontend_blueprint:
     type: "Sistema interno corporativo"
     target_delivery: "Base full stack funcional para handoff"
   maturity:
-    current: "Nível 2 — frontend funcional com persistência temporária, sem API/auth finais"
+    current: "SPA integrada à API; autenticação real aguardando App Registration"
     target: "Nível 4 — pronto para homologação e continuidade pela desenvolvedora"
   stack_target:
     framework: "React 19"
@@ -96,14 +123,14 @@ frontend_blueprint:
     eligible_domains:
       - "mcm.eng.br"
       - "mcmmontagens.com.br"
-    session_strategy: "sessão mediada pelo backend; preferir cookie HttpOnly"
+    session_strategy: "sessão HttpOnly opaca do backend, persistida server-side"
     local_storage_auth_tokens: false
   mocks:
-    allowed_during_development: true
+    allowed_during_development: false
     allowed_in_production: false
     import_directly_in_pages: false
   pwa_required: false
-  public_routes_required: false
+  public_routes_required: true
   seo_required: false
   advanced_motion_required: false
   ai_interface_required: false
@@ -516,28 +543,8 @@ No backend final, paginação server-side é a direção padrão para listas pot
 
 ## 16. Mocks
 
-Mocks podem ser usados no desenvolvimento e testes visuais, mas devem obedecer:
-
-```text
-Page → Hook → Service → Mock ou API
-```
-
-Nunca:
-
-```text
-Page → Mock
-Component → Mock
-```
-
-Variáveis possíveis:
-
-```env
-VITE_USE_MOCKS=false
-VITE_MOCK_SCENARIO=success
-VITE_MOCK_DELAY_MS=500
-```
-
-Na base entregue à Milena, o caminho padrão deve ser API real. Mocks devem estar desligados e isolados.
+A aplicação utiliza a API real em todos os ambientes. Não há mocks permanentes,
+flag de mocks nem fluxo de autenticação simulado.
 
 ---
 
@@ -648,9 +655,6 @@ Exemplo inicial:
 ```env
 VITE_API_BASE_URL=http://localhost:3000/api/v1
 VITE_APP_NAME=MCM Gestão de Afastados
-VITE_APP_ENV=local
-VITE_USE_MOCKS=false
-VITE_DEFAULT_LOCALE=pt-BR
 ```
 
 Não devem existir no frontend final:
@@ -693,50 +697,13 @@ Checklist obrigatório:
 
 ---
 
-## 25. Testes frontend mínimos
+## 25. Validação desta fase
 
-### Unit/component
-
-Priorizar:
-
-- schemas e validações;
-- filtros;
-- formatadores;
-- componentes de permissão;
-- estados de tabela;
-- helpers de data.
-
-### Integração
-
-Priorizar:
-
-- services;
-- hooks;
-- formulários;
-- tratamento de erro;
-- cache/invalidação.
-
-### E2E
-
-Recomendado para a base porque existem:
-
-- autenticação crítica;
-- permissões;
-- CRUDs sensíveis;
-- documentos.
-
-Cenários mínimos:
-
-1. login corporativo válido;
-2. domínio não permitido;
-3. usuário sem autorização local;
-4. CRUD de afastamento;
-5. CRUD de colaborador;
-6. inativação de cadastro auxiliar;
-7. inclusão de andamento;
-8. upload/download de documento;
-9. ação negada por permissão;
-10. logout.
+Conforme DEC-036, não foram criados testes automatizados. A validação usa
+TypeScript, build, ESLint, auditoria npm, Compose, healthchecks, revisão dos
+contratos e smoke manual das rotas. O fluxo autenticado de ponta a ponta exige
+App Registration Microsoft real e usuário local autorizado. Consulte o runbook
+`docs/runbooks/setup-local.md` para os comandos e limites de validação.
 
 ---
 
@@ -769,9 +736,9 @@ Os nomes abaixo representam capacidades e não fecham o modelo definitivo de pap
 | `leaves.read` | listar/detalhar afastamentos |
 | `leaves.create` | criar afastamento |
 | `leaves.update` | editar/encerrar |
-| `progress.create/update/delete` | andamentos |
-| `documents.read/create/delete` | documentos |
-| `employees.read/create/update` | colaboradores |
+| `progress.read/manage` | andamentos |
+| `documents.read/upload/download/delete` | documentos |
+| `employees.read/manage` | colaboradores |
 | `settings.manage` | cadastros auxiliares |
 | `users.manage` | usuários e acessos |
 | `notifications.read` | notificações |
@@ -797,7 +764,7 @@ O frontend exige da camada técnica:
 - auditoria;
 - respostas padronizadas de erro.
 
-Os contratos definitivos serão fechados posteriormente.
+Os contratos implementados estão no backend e em `backend/openapi/openapi.yaml`; divergências encontradas na integração estão registradas no Decision Log.
 
 ---
 
@@ -805,7 +772,7 @@ Os contratos definitivos serão fechados posteriormente.
 
 ### Estado atual
 
-**Nível 2 — frontend funcional, porém acoplado à persistência temporária e sem autenticação/API finais.**
+**SPA integrada à API com autenticação/capacidades estruturadas; homologação autenticada pendente da configuração Microsoft.**
 
 ### Meta da base entregue
 
@@ -819,7 +786,7 @@ Para atingir a meta:
 - formulários padronizados;
 - estados e erros completos;
 - responsividade validada;
-- testes mínimos;
+- smoke autenticado com a configuração Microsoft real;
 - build e ambiente documentados.
 
 ---
@@ -848,7 +815,7 @@ Para atingir a meta:
 - [ ] notificações lidas persistidas por usuário via API;
 - [ ] documentos protegidos via backend;
 - [ ] dashboard sem dados hardcoded;
-- [ ] testes críticos executáveis;
+- [ ] smoke autenticado completo após configuração Microsoft;
 - [ ] `npm run build` e typecheck passam;
 - [ ] README permite à Milena subir o frontend e entender os módulos.
 
@@ -865,6 +832,6 @@ A base entregue deve permitir que a desenvolvedora:
 5. execute os CRUDs principais;
 6. compreenda os módulos por domínio;
 7. encontre regras e permissões no backend/API, não em código disperso de UI;
-8. executar testes;
+8. executar typecheck, build, lint e smoke;
 9. localizar documentação de decisões;
 10. continuar evolução sem conhecer a ferramenta utilizada na prototipação inicial.

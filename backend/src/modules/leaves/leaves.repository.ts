@@ -10,6 +10,7 @@ const include = {
 export interface LeaveListInput {
   page: number; perPage: number; search?: string | undefined; colaboradorId?: string | undefined; obraId?: string | undefined; funcaoId?: string | undefined;
   tipoBeneficioId?: string | undefined; situacaoId?: string | undefined;
+  classificacao?: "ATIVO" | "ENCERRADO" | "APOSENTADO" | undefined;
   sortBy: "dataAfastamento" | "dataRetornoPrevista" | "dataFimBeneficio" | "createdAt"; sortDirection: "asc" | "desc";
 }
 export interface LeaveWriteData {
@@ -28,6 +29,7 @@ export class LeavesRepository {
       ...(input.colaboradorId ? { colaboradorId: input.colaboradorId } : {}), ...(input.obraId ? { obraId: input.obraId } : {}),
       ...(input.funcaoId ? { funcaoId: input.funcaoId } : {}), ...(input.tipoBeneficioId ? { tipoBeneficioId: input.tipoBeneficioId } : {}),
       ...(input.situacaoId ? { situacaoId: input.situacaoId } : {}),
+      ...(input.classificacao ? { situacao: { classificacao: input.classificacao } } : {}),
     };
     const [data, total] = await prisma.$transaction([
       prisma.afastamento.findMany({ where, include, orderBy: [{ [input.sortBy]: input.sortDirection }, { id: input.sortDirection }], skip: (input.page - 1) * input.perPage, take: input.perPage }),

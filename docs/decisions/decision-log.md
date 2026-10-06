@@ -1,6 +1,6 @@
 # Registro de Decisões — MCM Gestão de Afastados
 
-**Atualizado em:** 05/10/2026
+**Atualizado em:** 06/10/2026
 
 | ID | Data | Status | Decisão | Justificativa | Impacto |
 |---|---|---|---|---|---|
@@ -59,3 +59,28 @@
 | DEC-P13 | 05/10/2026 | Pendente | Definir prazos corporativos de retenção/anonimização/expurgo de documentos, dados de saúde, audit logs e tombstones. | Necessário antes de produção com dados reais. | Banco, segurança, compliance, infraestrutura. |
 
 | DEC-036 | 06/10/2026 | Decidida | Testes automatizados não fazem parte do escopo desta entrega e não serão implementados via Codex nesta fase. | A validação atual será por typecheck, build, migrations, healthchecks, smoke manual e revisão técnica. | Backend, frontend, API, banco, handoff. |
+
+## Auditoria de integração da Fase 3 — 06/10/2026
+
+Divergências identificadas antes da substituição das fontes de dados:
+
+- O protótipo gera código de colaborador e contém nascimento/admissão; a API exige `codigoCorporativo`, obra e função e não persiste essas datas. A UI solicitará o código corporativo e somente enviará campos suportados.
+- A API de afastamentos não persiste início de benefício nem aposentadoria. A UI não apresentará esses campos como editáveis. O filtro de classificação da lista exige extensão mínima do schema/repository da API, usando a classificação já existente na situação, sem nova regra de negócio.
+- A validação de edição de afastamento verificava novamente referências inativas já vinculadas, contrariando a preservação histórica (RN-002). Somente referências alteradas serão verificadas quanto à atividade.
+- Cadastros auxiliares não possuem código nem ordem de exibição na API. A UI seguirá os campos reais. Consultas de apoio exigem `settings.manage`; não serão criados grants ou ampliadas permissões implicitamente.
+- Documentos recebem `file`, `tipoDocumentoId` e `andamentoId` opcionais conforme schema, sem `dataDocumento`. A lista exibirá data de envio técnica, sem fingir persistência de data documental.
+- O dashboard atual não recebe filtro de obra nem informa obra na lista prioritária. O filtro ficará explicitamente indisponível; duração continuará `pending_final_validation`, sem cálculo substituto.
+- Notificações retornam lista e `meta.unreadCount`, com filtro `status`, sem contrato `page/perPage`. A UI consumirá esse contrato específico e persistirá leitura pela API.
+- `/auth/login` devolvia JSON de erro mesmo na navegação do browser. Será mantido o erro JSON oficial para clientes de API e adicionada apresentação HTML amigável em navegação que solicite HTML, preservando o status HTTP.
+
+A auditoria inicial mapeou: lista/form/detalhe de afastamentos, histórico, documentos, colaboradores e configurações → cliente de persistência do protótipo; dashboard → cálculos locais sobre consultas integrais; notificações → consultas integrais e leitura em localStorage. Login e administração de usuários ainda não existiam.
+
+
+| DEC-037 | 06/10/2026 | Implementada | Frontend SPA Vite/React com TanStack Router, Query, API client e services por domínio; somente `/api/v1`, sessão HttpOnly e capabilities do backend. | Concluir integração e eliminar acesso direto ao banco/storage. | Frontend, auth e handoff. |
+| DEC-038 | 06/10/2026 | Implementada | Supabase, Lovable e Bun removidos da stack operacional; npm/package-lock, build estático e Nginx com fallback SPA e proxy da API. | Projeto MCM independente e Docker portável. | Dependências, build e infraestrutura. |
+
+O lockfile conserva metadado de peer opcional de tipos de outro runtime em uma
+dependência transitiva do plugin do roteador; esse pacote de tipos não é instalado
+nem necessário. Não se adultera o lockfile para esconder metadados publicados.
+A App Registration Microsoft, a matriz operacional de capacidades, o provider de
+storage de produção, Apdata e a fórmula de duração continuam pendentes.

@@ -1,21 +1,11 @@
-# Routes
+# Rotas da SPA
 
-TanStack Start uses **file-based routing**. Every `.tsx` file in this directory
-defines a route. Do **not** create `src/pages/`, `src/routes/_app/index.tsx`, or
-`app/layout.tsx` — those are Next.js / Remix conventions. The only root layout
-is `src/routes/__root.tsx`.
+TanStack Router usa arquivos `.tsx` neste diretório. O plugin do Vite gera
+`src/routeTree.gen.ts`; não edite esse arquivo manualmente.
 
-## Conventions
+`__root.tsx` contém providers, proteção de sessão/capacidades, fallback e Outlet.
+`login.tsx` é pública. As URLs de afastamentos, colaboradores, dashboard e
+configurações foram preservadas; `usuarios.tsx` administra acessos.
 
-| File | URL |
-| --- | --- |
-| `index.tsx` | `/` |
-| `about.tsx` | `/about` |
-| `users/index.tsx` | `/users` |
-| `users/$id.tsx` | `/users/:id` (dynamic — bare `$`, no curly braces) |
-| `posts/{-$category}.tsx` | `/posts/:category?` (optional segment) |
-| `files/$.tsx` | `/files/*` (splat — read via `_splat` param, never `*`) |
-| `_layout.tsx` | layout route (renders children via `<Outlet />`) |
-| `__root.tsx` | app shell — wraps every page; preserve `<Outlet />` |
-
-`routeTree.gen.ts` is auto-generated. Don't edit it by hand.
+O servidor estático precisa encaminhar rotas de interface para `index.html`.
+Endpoints `/api/v1` são atendidos exclusivamente pelo backend.

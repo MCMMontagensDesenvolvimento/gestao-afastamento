@@ -44,8 +44,16 @@ paths:
         - { name: returnTo, in: query, schema: { type: string }, description: Rota interna após autenticação }
       responses:
         '302': { description: Redirecionamento para o Microsoft Entra ID }
-        '422': { $ref: '#/components/responses/ValidationError' }
-        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+        '422':
+          description: Entrada inválida; navegação HTML recebe mensagem amigável e link para retornar ao login.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+            text/html: { schema: { type: string } }
+        '503':
+          description: Microsoft não configurado ou indisponível; preserva status e requestId em JSON ou página HTML amigável.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+            text/html: { schema: { type: string } }
   /api/v1/auth/callback:
     get:
       security: []
@@ -307,6 +315,7 @@ paths:
         - { name: funcaoId, in: query, schema: { type: string, format: uuid } }
         - { name: tipoBeneficioId, in: query, schema: { type: string, format: uuid } }
         - { name: situacaoId, in: query, schema: { type: string, format: uuid } }
+        - { name: classificacao, in: query, schema: { type: string, enum: [ATIVO, ENCERRADO, APOSENTADO] } }
         - { name: sortBy, in: query, schema: { type: string, enum: [dataAfastamento, dataRetornoPrevista, dataFimBeneficio, createdAt], default: dataAfastamento } }
         - { $ref: '#/components/parameters/SortDirection' }
       responses: { '200': { $ref: '#/components/responses/Paginated' }, '422': { $ref: '#/components/responses/ValidationError' } }

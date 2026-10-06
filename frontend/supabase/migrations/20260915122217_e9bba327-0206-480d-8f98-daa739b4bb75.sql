@@ -1,1 +1,0 @@
-UPDATE public.afastamentos SET observacoes = NULL WHERE id = '3294991e-766e-42e5-acd2-453a0e8d8775' AND observacoes = 'Teste de edicao';

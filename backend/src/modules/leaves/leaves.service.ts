@@ -37,8 +37,14 @@ export class LeavesService {
       situacaoId: input.situacaoId ?? current.situacaoId,
       tipoBeneficioId: input.tipoBeneficioId === undefined ? current.tipoBeneficioId : input.tipoBeneficioId,
     };
-    const referenceChanged = Object.entries(references).some(([key, value]) => value !== current[key as keyof typeof references]);
-    if (referenceChanged) await this.ensureReferences(references);
+    const changedReferences = Object.entries(references).filter(([key, value]) => value !== current[key as keyof typeof references]);
+    if (changedReferences.length > 0) {
+      const valid = await this.repository.validateReferences(references);
+      const validationKeys = { colaboradorId: "colaborador", obraId: "obra", funcaoId: "funcao", situacaoId: "situacao", tipoBeneficioId: "beneficio" } as const;
+      if (changedReferences.some(([key]) => !valid[validationKeys[key as keyof typeof validationKeys]])) {
+        throw new AppError(422, "INACTIVE_OR_INVALID_REFERENCE", "As novas referências devem existir e estar ativas.");
+      }
+    }
     const item = await this.repository.update(id, { ...this.toData(input), updatedById: actor });
     await this.audit.record({ actorUserId: actor, action: "leave.update", entityType: "Afastamento", entityId: id, requestId, metadata: { fields: Object.keys(input) } });
     return { data: mapLeave(item) };

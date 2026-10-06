@@ -5,6 +5,7 @@ export const leavesQuery = z.object({
   page: paginationFields.page, perPage: paginationFields.perPage, search: paginationFields.search,
   colaboradorId: z.uuid().optional(), obraId: z.uuid().optional(), funcaoId: z.uuid().optional(),
   tipoBeneficioId: z.uuid().optional(), situacaoId: z.uuid().optional(),
+  classificacao: z.enum(["ATIVO", "ENCERRADO", "APOSENTADO"]).optional(),
   sortBy: z.enum(["dataAfastamento", "dataRetornoPrevista", "dataFimBeneficio", "createdAt"]).default("dataAfastamento"),
   sortDirection: paginationFields.sortDirection,
 }).strict();

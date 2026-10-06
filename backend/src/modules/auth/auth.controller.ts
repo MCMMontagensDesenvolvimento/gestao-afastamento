@@ -15,6 +15,16 @@ export class AuthController {
       res.cookie(FLOW_COOKIE, JSON.stringify(result.flow), { ...baseCookie, signed: true, maxAge: 10 * 60_000 });
       res.redirect(result.url);
     } catch (error) {
+      // A navegação de login recebe uma página legível; clientes JSON conservam
+      // o contrato oficial de erros, inclusive status e requestId.
+      if (req.accepts(["json", "html"]) === "html") {
+        const status = error instanceof AppError ? error.status : 503;
+        const message = error instanceof AppError ? error.message : "A autenticação Microsoft está temporariamente indisponível. Tente novamente em instantes.";
+        const target = new URL("/login", env.FRONTEND_ORIGIN);
+        target.searchParams.set("authError", error instanceof AppError ? error.code : "AUTHENTICATION_FAILED");
+        res.status(status).type("html").send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Login — MCM Gestão de Afastados</title></head><body><main><h1>Autenticação indisponível</h1><p>${escapeHtml(message)}</p><p>Entre em contato com o administrador ou tente novamente em instantes.</p><p>Referência: ${escapeHtml(req.requestId)}</p><a href="${escapeHtml(target.toString())}">Voltar ao login</a></main></body></html>`);
+        return;
+      }
       next(error);
     }
   };
@@ -53,4 +63,8 @@ export class AuthController {
       next(error);
     }
   };
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 }

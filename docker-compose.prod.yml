@@ -10,7 +10,7 @@ services:
       TZ: ${TZ:-America/Recife}
       POSTGRES_DB: ${POSTGRES_DB:-gestao_afastados}
       POSTGRES_USER: ${POSTGRES_USER:-gestao_afastados}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no ambiente de producao}
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,21 +28,21 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?Defina FRONTEND_ORIGIN no ambiente de producao}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: ${DATABASE_URL:?Defina DATABASE_URL no ambiente de producao}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-mcm_afastados_session}
-      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET:?Defina SESSION_SECRET no ambiente de producao}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
       SESSION_TOUCH_INTERVAL_SECONDS: ${SESSION_TOUCH_INTERVAL_SECONDS:-300}
       COOKIE_SECURE: "true"
       COOKIE_SAME_SITE: lax
-      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
-      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
-      MICROSOFT_TENANT_IDS: ${MICROSOFT_TENANT_IDS}
-      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:?Defina MICROSOFT_CLIENT_ID no ambiente de producao}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:?Defina MICROSOFT_CLIENT_SECRET no ambiente de producao}
+      MICROSOFT_TENANT_IDS: ${MICROSOFT_TENANT_IDS:?Defina MICROSOFT_TENANT_IDS no ambiente de producao}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:?Defina MICROSOFT_REDIRECT_URI no ambiente de producao}
       MICROSOFT_ALLOWED_EMAIL_DOMAINS: mcm.eng.br,mcmmontagens.com.br
-      STORAGE_DRIVER: ${STORAGE_DRIVER}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:?Defina STORAGE_DRIVER no ambiente de producao}
       LOCAL_STORAGE_PATH: /app/storage
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-}
@@ -58,7 +58,13 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -68,15 +74,16 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: /api/v1
     restart: unless-stopped
-    environment:
-      PORT: 3000
-    expose: ["3000"]
+    expose: ["80"]
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health.html').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health.html"]
       interval: 10s
       timeout: 5s
       retries: 10

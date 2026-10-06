@@ -1,5 +1,8 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth/session";
+import { ApiError, errorMessage } from "@/lib/api/errors";
+import { afastamentoQuery } from "@/hooks/use-leaves";
 import { ArrowLeft, Pencil } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EstadoErro, EstadoVazio, Secao } from "@/components/padroes";
@@ -9,7 +12,7 @@ import { AfastamentoDocumentos } from "@/components/AfastamentoDocumentos";
 import { AfastamentoHistorico } from "@/components/AfastamentoHistorico";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { afastamentoQuery, corDaClassificacao, formatarData } from "@/lib/dados";
+import { corDaClassificacao, formatarData } from "@/lib/dados";
 
 export const Route = createFileRoute("/afastamentos/$id/")({
   head: () => ({
@@ -31,7 +34,11 @@ export const Route = createFileRoute("/afastamentos/$id/")({
 
 function PaginaDetalhe() {
   const { id } = useParams({ from: "/afastamentos/$id/" });
-  const { data, isLoading, isError, refetch } = useQuery(afastamentoQuery(id));
+  const { can } = useAuth();
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    ...afastamentoQuery(id),
+    enabled: can("leaves.read"),
+  });
 
   const voltar = (
     <Button asChild variant="outline">
@@ -40,6 +47,25 @@ function PaginaDetalhe() {
       </Link>
     </Button>
   );
+
+  if (!can("leaves.read"))
+    return (
+      <AppLayout titulo="Afastamento">
+        <EstadoVazio
+          titulo="Acesso negado"
+          descricao="Você não possui permissão para consultar afastamentos."
+        />
+      </AppLayout>
+    );
+  if (error instanceof ApiError && error.status === 404)
+    return (
+      <AppLayout titulo="Afastamento" acoes={voltar}>
+        <EstadoVazio
+          titulo="Afastamento não encontrado."
+          descricao="Verifique o endereço informado."
+        />
+      </AppLayout>
+    );
 
   if (isLoading) {
     return (
@@ -56,7 +82,7 @@ function PaginaDetalhe() {
   if (isError) {
     return (
       <AppLayout titulo="Afastamento" acoes={voltar}>
-        <EstadoErro mensagem="Não foi possível carregar o afastamento." aoTentarNovamente={() => refetch()} />
+        <EstadoErro mensagem={errorMessage(error)} aoTentarNovamente={() => refetch()} />
       </AppLayout>
     );
   }
@@ -82,11 +108,13 @@ function PaginaDetalhe() {
       titulo={data.colaboradores?.nome ?? "Afastamento"}
       descricao={data.colaboradores?.codigo_interno ?? ""}
       acoes={
-        <Button asChild>
-          <Link to="/afastamentos/$id/editar" params={{ id }}>
-            <Pencil className="size-4" /> Editar afastamento
-          </Link>
-        </Button>
+        can("leaves.update") ? (
+          <Button asChild>
+            <Link to="/afastamentos/$id/editar" params={{ id }}>
+              <Pencil className="size-4" /> Editar afastamento
+            </Link>
+          </Button>
+        ) : null
       }
     >
       <div className="rounded-md border border-border bg-card p-4 sm:p-5">
@@ -104,7 +132,6 @@ function PaginaDetalhe() {
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-4">
           <Campo rotulo="Afastamento" valor={formatarData(data.data_afastamento)} />
-          <Campo rotulo="Início do benefício" valor={formatarData(data.data_inicio_beneficio)} />
           <Campo rotulo="Fim do benefício" valor={formatarData(data.data_fim_beneficio)} />
           <Campo rotulo="Retorno previsto" valor={formatarData(data.data_retorno_previsto)} />
         </dl>
@@ -113,8 +140,8 @@ function PaginaDetalhe() {
       <Tabs defaultValue="dados" className="mt-5">
         <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
           <TabsTrigger value="dados">Dados</TabsTrigger>
-          <TabsTrigger value="historico">Histórico</TabsTrigger>
-          <TabsTrigger value="documentos">Documentos</TabsTrigger>
+          {can("progress.read") ? <TabsTrigger value="historico">Histórico</TabsTrigger> : null}
+          {can("documents.read") ? <TabsTrigger value="documentos">Documentos</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="dados">
           <Secao titulo="Dados do afastamento">
@@ -122,11 +149,9 @@ function PaginaDetalhe() {
               <Campo rotulo="Data do afastamento" valor={formatarData(data.data_afastamento)} />
               <Campo rotulo="Tipo de benefício" valor={beneficio} />
               <Campo rotulo="Situação" valor={data.situacoes_afastamento?.nome ?? "—"} />
-              <Campo rotulo="Início do benefício" valor={formatarData(data.data_inicio_beneficio)} />
               <Campo rotulo="Fim do benefício" valor={formatarData(data.data_fim_beneficio)} />
               <Campo rotulo="Retorno previsto" valor={formatarData(data.data_retorno_previsto)} />
               <Campo rotulo="Retorno efetivo" valor={formatarData(data.data_retorno_efetivo)} />
-              <Campo rotulo="Data da aposentadoria" valor={formatarData(data.data_aposentadoria)} />
               <Campo rotulo="Obra" valor={data.obras?.nome ?? "—"} />
               <Campo rotulo="Função" valor={data.funcoes?.nome ?? "—"} />
               <Campo rotulo="Causa / CID" valor={data.causa_cid || "—"} />
@@ -134,11 +159,17 @@ function PaginaDetalhe() {
             </dl>
           </Secao>
         </TabsContent>
-        <TabsContent value="historico" className="rounded-md border border-border bg-card p-4 sm:p-5">
-          <AfastamentoHistorico afastamentoId={id} />
+        <TabsContent
+          value="historico"
+          className="rounded-md border border-border bg-card p-4 sm:p-5"
+        >
+          {can("progress.read") ? <AfastamentoHistorico afastamentoId={id} /> : null}
         </TabsContent>
-        <TabsContent value="documentos" className="rounded-md border border-border bg-card p-4 sm:p-5">
-          <AfastamentoDocumentos afastamentoId={id} />
+        <TabsContent
+          value="documentos"
+          className="rounded-md border border-border bg-card p-4 sm:p-5"
+        >
+          {can("documents.read") ? <AfastamentoDocumentos afastamentoId={id} /> : null}
         </TabsContent>
       </Tabs>
     </AppLayout>

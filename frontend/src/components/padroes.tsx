@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   AlertCircle,
   ChevronLeft,
@@ -47,6 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ApiError, errorMessage } from "@/lib/api/errors";
 
 /* ---------- Seções e cartões ---------- */
 
@@ -126,9 +127,11 @@ export function EstadoErro({
     >
       <AlertCircle className="size-6 text-destructive" aria-hidden="true" />
       <p className="text-sm font-medium">{mensagem}</p>
-      <p className="text-sm text-muted-foreground">
-        Verifique sua conexão e tente novamente em instantes.
-      </p>
+      {!/permiss[aã]o|acesso negado/i.test(mensagem) ? (
+        <p className="text-sm text-muted-foreground">
+          Verifique sua conexão e tente novamente em instantes.
+        </p>
+      ) : null}
       {aoTentarNovamente ? (
         <Button variant="outline" size="sm" className="mt-2" onClick={aoTentarNovamente}>
           <RotateCcw className="size-4" /> Tentar novamente
@@ -161,6 +164,7 @@ export function ListaSkeleton({ itens = 3 }: { itens?: number }) {
 
 /** Mensagem amigável a partir de erros técnicos. */
 export function mensagemAmigavel(erro: unknown, padrao = "Não foi possível concluir a operação.") {
+  if (erro instanceof ApiError) return errorMessage(erro);
   const texto = erro instanceof Error ? erro.message : String(erro ?? "");
   if (!texto) return padrao;
   if (/fetch|network|failed to/i.test(texto)) return "Falha de conexão. Tente novamente.";
@@ -228,7 +232,9 @@ export function ConfirmDialog({
           <AlertDialogCancel disabled={carregando}>Cancelar</AlertDialogCancel>
           <AlertDialogAction
             disabled={carregando}
-            className={cn(destrutivo && "bg-destructive text-destructive-foreground hover:bg-destructive/90")}
+            className={cn(
+              destrutivo && "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+            )}
             onClick={(e) => {
               e.preventDefault();
               aoConfirmar();
@@ -254,7 +260,13 @@ export type AcaoLinha = {
 };
 
 /** Ícones no desktop; menu "mais ações" em telas menores. */
-export function AcoesLinha({ acoes, compacto = false }: { acoes: AcaoLinha[]; compacto?: boolean }) {
+export function AcoesLinha({
+  acoes,
+  compacto = false,
+}: {
+  acoes: AcaoLinha[];
+  compacto?: boolean;
+}) {
   return (
     <>
       <div className={cn("hidden justify-end gap-1", !compacto && "lg:flex")}>
@@ -296,23 +308,7 @@ export function AcoesLinha({ acoes, compacto = false }: { acoes: AcaoLinha[]; co
   );
 }
 
-/* ---------- Paginação client-side ---------- */
-
-export const TAMANHO_PAGINA = 10;
-
-export function usePaginacao<T>(itens: T[], tamanho = TAMANHO_PAGINA) {
-  const [pagina, setPagina] = useState(1);
-  const totalPaginas = Math.max(1, Math.ceil(itens.length / tamanho));
-  useEffect(() => {
-    if (pagina > totalPaginas) setPagina(totalPaginas);
-  }, [pagina, totalPaginas]);
-  const atual = Math.min(pagina, totalPaginas);
-  const visiveis = useMemo(
-    () => itens.slice((atual - 1) * tamanho, atual * tamanho),
-    [itens, atual, tamanho],
-  );
-  return { pagina: atual, setPagina, totalPaginas, visiveis, total: itens.length, tamanho };
-}
+/* ---------- Paginação server-side ---------- */
 
 export function Paginacao({
   pagina,
@@ -320,12 +316,14 @@ export function Paginacao({
   total,
   tamanho,
   setPagina,
+  setTamanho,
 }: {
   pagina: number;
   totalPaginas: number;
   total: number;
   tamanho: number;
   setPagina: (p: number) => void;
+  setTamanho?: ((tamanho: number) => void) | undefined;
 }) {
   if (total === 0) return null;
   const inicio = (pagina - 1) * tamanho + 1;
@@ -338,7 +336,24 @@ export function Paginacao({
       <span>
         {inicio}–{fim} de {total} {total === 1 ? "registro" : "registros"}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {setTamanho ? (
+          <label className="flex items-center gap-2 text-xs">
+            Por página
+            <select
+              aria-label="Registros por página"
+              className="rounded-md border border-input bg-card p-2 text-foreground"
+              value={tamanho}
+              onChange={(event) => setTamanho(Number(event.target.value))}
+            >
+              {[10, 20, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
@@ -496,7 +511,8 @@ export function BarraFiltros({
 
 /** Classes para tabela com cabeçalho fixo e rolagem vertical. */
 export const TABELA_CONTAINER = "max-h-[60vh]";
-export const CABECALHO_FIXO = "sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--color-border)]";
+export const CABECALHO_FIXO =
+  "sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--color-border)]";
 
 export function CampoForm({
   id,

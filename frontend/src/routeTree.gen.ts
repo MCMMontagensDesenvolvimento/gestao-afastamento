@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ColaboradoresRouteImport } from './routes/colaboradores'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as AfastamentosNovoRouteImport } from './routes/afastamentos.novo'
 import { Route as AfastamentosIdIndexRouteImport } from './routes/afastamentos.$id.index'
 import { Route as AfastamentosIdEditarRouteImport } from './routes/afastamentos.$id.editar'
@@ -37,6 +39,16 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsuariosRoute = UsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AfastamentosNovoRoute = AfastamentosNovoRouteImport.update({
   id: '/afastamentos/novo',
   path: '/afastamentos/novo',
@@ -58,6 +70,8 @@ export interface FileRoutesByFullPath {
   '/colaboradores': typeof ColaboradoresRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/usuarios': typeof UsuariosRoute
   '/afastamentos/novo': typeof AfastamentosNovoRoute
   '/afastamentos/$id/editar': typeof AfastamentosIdEditarRoute
   '/afastamentos/$id/': typeof AfastamentosIdIndexRoute
@@ -67,6 +81,8 @@ export interface FileRoutesByTo {
   '/colaboradores': typeof ColaboradoresRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/usuarios': typeof UsuariosRoute
   '/afastamentos/novo': typeof AfastamentosNovoRoute
   '/afastamentos/$id/editar': typeof AfastamentosIdEditarRoute
   '/afastamentos/$id': typeof AfastamentosIdIndexRoute
@@ -77,6 +93,8 @@ export interface FileRoutesById {
   '/colaboradores': typeof ColaboradoresRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/usuarios': typeof UsuariosRoute
   '/afastamentos/novo': typeof AfastamentosNovoRoute
   '/afastamentos/$id/editar': typeof AfastamentosIdEditarRoute
   '/afastamentos/$id/': typeof AfastamentosIdIndexRoute
@@ -88,6 +106,8 @@ export interface FileRouteTypes {
     | '/colaboradores'
     | '/configuracoes'
     | '/dashboard'
+    | '/login'
+    | '/usuarios'
     | '/afastamentos/novo'
     | '/afastamentos/$id/editar'
     | '/afastamentos/$id/'
@@ -97,6 +117,8 @@ export interface FileRouteTypes {
     | '/colaboradores'
     | '/configuracoes'
     | '/dashboard'
+    | '/login'
+    | '/usuarios'
     | '/afastamentos/novo'
     | '/afastamentos/$id/editar'
     | '/afastamentos/$id'
@@ -106,6 +128,8 @@ export interface FileRouteTypes {
     | '/colaboradores'
     | '/configuracoes'
     | '/dashboard'
+    | '/login'
+    | '/usuarios'
     | '/afastamentos/novo'
     | '/afastamentos/$id/editar'
     | '/afastamentos/$id/'
@@ -116,6 +140,8 @@ export interface RootRouteChildren {
   ColaboradoresRoute: typeof ColaboradoresRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   DashboardRoute: typeof DashboardRoute
+  LoginRoute: typeof LoginRoute
+  UsuariosRoute: typeof UsuariosRoute
   AfastamentosNovoRoute: typeof AfastamentosNovoRoute
   AfastamentosIdEditarRoute: typeof AfastamentosIdEditarRoute
   AfastamentosIdIndexRoute: typeof AfastamentosIdIndexRoute
@@ -151,6 +177,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usuarios': {
+      id: '/usuarios'
+      path: '/usuarios'
+      fullPath: '/usuarios'
+      preLoaderRoute: typeof UsuariosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/afastamentos/novo': {
       id: '/afastamentos/novo'
       path: '/afastamentos/novo'
@@ -180,6 +220,8 @@ const rootRouteChildren: RootRouteChildren = {
   ColaboradoresRoute: ColaboradoresRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   DashboardRoute: DashboardRoute,
+  LoginRoute: LoginRoute,
+  UsuariosRoute: UsuariosRoute,
   AfastamentosNovoRoute: AfastamentosNovoRoute,
   AfastamentosIdEditarRoute: AfastamentosIdEditarRoute,
   AfastamentosIdIndexRoute: AfastamentosIdIndexRoute,
@@ -187,13 +229,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

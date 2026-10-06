@@ -2,72 +2,69 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
+  HeadContent,
   createRootRouteWithContext,
+  redirect,
   type ErrorComponentProps,
   useRouter,
-  HeadContent,
-  Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
-
 import { Toaster } from "@/components/ui/sonner";
-import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
+import { Button } from "@/components/ui/button";
+import { TabelaSkeleton } from "@/components/padroes";
+import { ApiError, errorMessage } from "@/lib/api/errors";
+import { sessionQuery } from "@/lib/auth/session";
+
+function permissionFor(path: string) {
+  if (path === "/") return "leaves.read";
+  if (path === "/dashboard") return "dashboard.read";
+  if (path === "/afastamentos/novo") return "leaves.create";
+  if (/^\/afastamentos\/[^/]+\/editar\/?$/.test(path)) return "leaves.update";
+  if (path.startsWith("/afastamentos/")) return "leaves.read";
+  if (path.startsWith("/colaboradores")) return "employees.read";
+  if (path === "/configuracoes") return "settings.manage";
+  if (path === "/usuarios") return "users.read";
+  return undefined;
+}
 
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Página não encontrada</h2>
+        <h1 className="text-7xl font-bold">404</h1>
+        <h2 className="mt-4 text-xl font-semibold">Página não encontrada</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           O endereço acessado não existe ou foi alterado.
         </p>
-        <div className="mt-6">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Voltar ao início
-          </Link>
-        </div>
+        <Button asChild className="mt-6">
+          <Link to="/">Voltar ao início</Link>
+        </Button>
       </div>
     </div>
   );
 }
 
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
-  console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
-
+  const denied = error instanceof ApiError && error.status === 403;
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Não foi possível carregar esta página
+      <div role="alert" className="max-w-md text-center">
+        <h1 className="text-xl font-semibold">
+          {denied ? "Acesso negado" : "Não foi possível carregar esta página"}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Ocorreu um problema inesperado. Tente novamente ou volte ao início.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{errorMessage(error)}</p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
+          <Button
             onClick={() => {
-              router.invalidate();
+              void router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Tentar novamente
-          </button>
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            Voltar ao início
-          </a>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/login">Voltar à entrada</Link>
+          </Button>
         </div>
       </div>
     </div>
@@ -75,51 +72,44 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Controle de Afastamentos — MCM" },
-      { name: "description", content: "Controle de afastamentos de colaboradores da MCM." },
-      { property: "og:title", content: "Controle de Afastamentos — MCM" },
-      { property: "og:description", content: "Controle de afastamentos de colaboradores da MCM." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-    links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-      { rel: "icon", href: "/favicon.png", type: "image/png" },
-    ],
-  }),
-  shellComponent: RootShell,
+  beforeLoad: async ({ context, location }) => {
+    if (location.pathname === "/login") return;
+    try {
+      const session = await context.queryClient.fetchQuery(sessionQuery());
+      if (!session)
+        throw redirect({ to: "/login", search: { returnTo: location.href }, replace: true });
+      const permission = permissionFor(location.pathname);
+      if (permission && !session.permissions.includes(permission)) {
+        throw new ApiError(
+          403,
+          "PERMISSION_DENIED",
+          "Você não possui permissão para acessar esta página. Solicite acesso ao administrador.",
+        );
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        context.queryClient.clear();
+        context.queryClient.setQueryData(sessionQuery().queryKey, null);
+        throw redirect({ to: "/login", search: { returnTo: location.href }, replace: true });
+      }
+      throw error;
+    }
+  },
   component: RootComponent,
+  pendingComponent: () => (
+    <div className="mx-auto max-w-4xl p-6">
+      <TabelaSkeleton />
+    </div>
+  ),
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
 
-function RootShell({ children }: { children: ReactNode }) {
-  return (
-    <html lang="pt-BR">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
-}
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <HeadContent />
       <Outlet />
       <Toaster position="top-right" />
     </QueryClientProvider>

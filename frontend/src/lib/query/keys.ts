@@ -1,0 +1,16 @@
+export const queryKeys = {
+  auth: ["auth", "me"] as const,
+  users: ["users"] as const,
+  roles: ["roles"] as const,
+  permissions: ["permissions"] as const,
+  catalogs: ["catalogs"] as const,
+  employees: ["employees"] as const,
+  employeeHistory: (id: string) => ["employees", "history", id] as const,
+  leaves: ["leaves"] as const,
+  leaveDetail: (id: string) => ["leaves", "detail", id] as const,
+  progress: ["progress"] as const,
+  documents: ["documents"] as const,
+  notifications: ["notifications"] as const,
+  dashboard: ["dashboard"] as const,
+  audit: ["audit"] as const,
+};

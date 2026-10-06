@@ -1,9 +1,11 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth/session";
+import { ApiError, errorMessage } from "@/lib/api/errors";
+import { afastamentoQuery } from "@/hooks/use-leaves";
 
 import { AppLayout } from "@/components/AppLayout";
 import { AfastamentoForm } from "@/components/AfastamentoForm";
-import { afastamentoQuery } from "@/lib/dados";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EstadoErro, EstadoVazio } from "@/components/padroes";
 
@@ -27,7 +29,21 @@ export const Route = createFileRoute("/afastamentos/$id/editar")({
 
 function PaginaEditarAfastamento() {
   const { id } = useParams({ from: "/afastamentos/$id/editar" });
-  const { data, isLoading, isError, refetch } = useQuery(afastamentoQuery(id));
+  const { can } = useAuth();
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    ...afastamentoQuery(id),
+    enabled: can("leaves.read"),
+  });
+
+  if (!can("leaves.update") || !can("leaves.read"))
+    return (
+      <AppLayout titulo="Editar afastamento">
+        <EstadoVazio
+          titulo="Acesso negado"
+          descricao="Você não possui permissão para editar afastamentos."
+        />
+      </AppLayout>
+    );
 
   return (
     <AppLayout titulo="Editar afastamento" descricao={data?.colaboradores?.nome ?? ""}>
@@ -37,15 +53,20 @@ function PaginaEditarAfastamento() {
             <Skeleton key={i} className="h-44 w-full" />
           ))}
         </div>
+      ) : error instanceof ApiError && error.status === 404 ? (
+        <EstadoVazio
+          titulo="Afastamento não encontrado."
+          descricao="Verifique o endereço informado."
+        />
       ) : isError ? (
-        <EstadoErro mensagem="Não foi possível carregar o afastamento." aoTentarNovamente={() => refetch()} />
+        <EstadoErro mensagem={errorMessage(error)} aoTentarNovamente={() => refetch()} />
       ) : !data ? (
         <EstadoVazio
           titulo="Afastamento não encontrado."
           descricao="O registro pode ter sido removido ou o endereço está incorreto."
         />
       ) : (
-        <AfastamentoForm afastamento={data} />
+        <AfastamentoForm key={data.id} afastamento={data} />
       )}
     </AppLayout>
   );

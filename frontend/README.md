@@ -1,102 +1,76 @@
-# Gestão de Afastamentos
+# MCM Gestão de Afastados — frontend
 
-Crie o protótipo do sistema web "Controle de Afastamentos" em português (pt-BR) com Supabase e Lovable Cloud.
+SPA React, TypeScript e Vite, com TanStack Router para navegação e TanStack Query
+para o estado recebido do servidor. O layout e os componentes existentes são
+preservados.
 
-Identidade visual e estilo:
-- Cores: Laranja MCM (#ff4b00), cinza escuro (#4a4a4a), cinza claro (#eaeaea), branco (#ffffff).
-- Visual limpo, profissional, sem gráficos, sem sombras exageradas, sem complexidade desnecessária.
+## Desenvolvimento
 
-Estrutura de dados (tabelas Supabase com RLS e políticas permissivas/públicas para este protótipo inicial):
-1. obras (id uuid pk default gen_random_uuid(), nome text not null, ativo boolean default true, created_at timestamptz default now())
-2. funcoes (id uuid pk default gen_random_uuid(), nome text not null, ativo boolean default true, created_at timestamptz default now())
-3. tipos_beneficio (id uuid pk default gen_random_uuid(), codigo text, nome text not null, ativo boolean default true, ordem_exibicao int default 0, created_at timestamptz default now())
-   - Seed inicial:
-     - B31 - Benefício por incapacidade temporária (codigo: 'B31')
-     - B91 - Benefício por incapacidade temporária acidentário (codigo: 'B91')
-     - B32 - Aposentadoria por incapacidade permanente (codigo: 'B32')
-4. situacoes_afastamento (id uuid pk default gen_random_uuid(), nome text not null, classificacao_sistema text not null check (classificacao_sistema in ('ATIVO', 'ENCERRADO', 'APOSENTADO')), ativo boolean default true, ordem_exibicao int default 0, created_at timestamptz default now())
-   - Seed inicial:
-     - Em acompanhamento -> classificacao_sistema: 'ATIVO'
-     - Aguardando perícia -> classificacao_sistema: 'ATIVO'
-     - Aguardando decisão -> classificacao_sistema: 'ATIVO'
-     - Benefício ativo -> classificacao_sistema: 'ATIVO'
-     - Retorno previsto -> classificacao_sistema: 'ATIVO'
-     - Encerrado -> classificacao_sistema: 'ENCERRADO'
-     - Aposentado -> classificacao_sistema: 'APOSENTADO'
-5. tipos_andamento_afastamento (id uuid pk default gen_random_uuid(), nome text not null, ativo boolean default true, ordem_exibicao int default 0, created_at timestamptz default now())
-   - Seed inicial: Atestado, Requerimento INSS, Perícia, Decisão INSS, Prorrogação, Contato com colaborador, Retorno ao trabalho, Observação, Outros.
-6. tipos_documento_afastamento (id uuid pk default gen_random_uuid(), nome text not null, ativo boolean default true, ordem_exibicao int default 0, created_at timestamptz default now())
-   - Seed inicial: Atestado, Requerimento, Comprovante de perícia, Comunicado de decisão, Documento INSS, Relatório médico, Laudo médico, Outros.
-7. colaboradores (id uuid pk default gen_random_uuid(), codigo_interno text not null, nome text not null, contato text, data_nascimento date, data_admissao date, obra_id uuid references obras(id), funcao_id uuid references funcoes(id), ativo boolean default true, created_at timestamptz default now(), updated_at timestamptz default now())
-   - NUNCA usar nem pedir CPF.
-   - codigo_interno gerado automaticamente (ex: COL-0001, COL-0002...).
-8. afastamentos (id uuid pk default gen_random_uuid(), colaborador_id uuid not null references colaboradores(id), obra_id uuid references obras(id), funcao_id uuid references funcoes(id), data_afastamento date not null, tipo_beneficio_id uuid references tipos_beneficio(id), situacao_afastamento_id uuid not null references situacoes_afastamento(id), data_inicio_beneficio date, data_fim_beneficio date, data_retorno_previsto date, data_retorno_efetivo date, data_aposentadoria date, causa_cid text, observacoes text, created_at timestamptz default now(), updated_at timestamptz default now())
+Use Node.js 24 LTS e npm 10 ou superior. Na raiz do repositório:
 
-Regras de negócio cruciais:
-- Regra de contagem e filtros de afastamento: SEMPRE utilizar situacoes_afastamento.classificacao_sistema ('ATIVO', 'ENCERRADO', 'APOSENTADO'), nunca fazer match direto pelo nome da situação.
-- Dropdowns não devem ter opções fixas no código; sempre carregar das tabelas ativas.
-- Inativação lógica (soft-inactivation via ativo = false) em vez de exclusão física, impedindo exclusão de registros com vínculos.
-- Não cadastrar ou exibir CPF.
-
-Navegação e Telas:
-Menu lateral:
-1. "Afastados" (Tela Principal):
-   - Topo: 3 cards simples e discretos: Ativos, Encerrados, Aposentados (calculados via classificacao_sistema da situação).
-   - Filtros: Busca colaborador, Obra, Função, Tipo de benefício, Situação.
-   - Filtros rápidos em tabs/pills: Todos | Ativos | Encerrados | Aposentados.
-   - Tabela: Colaborador, Obra, Função, Tipo de benefício, Situação (com badge), Data do afastamento, Início do benefício, Fim do benefício, Ações (Visualizar, Editar).
-   - Botão "+ Novo afastamento".
-2. "Novo / Editar Afastamento" (modal ou página):
-   - Colaborador (dropdown pesquisável, apenas ativos ao criar).
-   - Obra e Função (ao selecionar colaborador, preencher inicialmente com os dele, mas permitir alterar).
-   - Data do afastamento (obrigatório).
-   - Tipo de benefício (dropdown configurável, opcional).
-   - Situação (dropdown configurável, obrigatório).
-   - Datas opcionais: início benefício, fim benefício, retorno previsto, retorno efetivo, aposentadoria.
-   - Causa / CID (textarea simples, sem dropdown).
-   - Observações (textarea).
-3. "Detalhe do Afastamento" (/afastamentos/:id):
-   - Cabeçalho com Nome do colaborador, ID interno, Obra, Função, Tipo de benefício, Situação, Data afastamento, Início/Fim do benefício, Retorno previsto.
-   - Seção "Dados do afastamento" completa.
-   - Botão "Editar afastamento".
-   - NÃO incluir histórico/linha do tempo nem upload de documentos.
-4. "Colaboradores":
-   - Busca por nome, filtro por obra, filtro Ativos/Inativos.
-   - Botão "+ Novo colaborador".
-   - Tabela com ID, Nome, Contato, Obra, Função, Status, Ações (Visualizar/Editar, Inativar/Reativar).
-   - Não permitir excluir se possuir afastamentos vinculados.
-5. "Configurações":
-   - Seção "Configurações de Afastamentos" com abas:
-     - Obras
-     - Funções
-     - Tipos de benefício
-     - Situações (com campo classificacao_sistema: ATIVO, ENCERRADO, APOSENTADO)
-     - Tipos de andamento
-     - Tipos de documento
-   - Cada aba permite cadastrar, editar e inativar/reativar.
-
-Seed de dados fictícios para teste demonstrando:
-- Pelo menos 4 obras (ex: Obra Alpha, Obra Beta, Obra Galpão Sul, Sede Administrativa) e 4 funções (ex: Pedreiro, Eletricista, Encarregado, Assistente Técnico).
-- 5 colaboradores fictícios.
-- Afastamentos simulando: 1 ativo em acompanhamento, 1 aguardando perícia, 1 benefício ativo, 1 encerrado e 1 aposentado.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/6212beef-4253-4b73-8cc9-fafe958052e7).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+```bash
+cp frontend/.env.example frontend/.env
+npm --prefix frontend ci
+npm --prefix frontend run dev
 ```
+
+A aplicação abre em `http://localhost:5173`. A API deve estar disponível em
+`http://localhost:3000/api/v1`. O setup completo, migrations e seed estão em
+[Execução local](../docs/runbooks/setup-local.md).
+
+`VITE_API_BASE_URL` é pública e define somente a URL da API. `VITE_APP_NAME`
+controla o título exibido no login. Não configure segredos no frontend.
+
+## Organização
+
+```text
+routes/components → hooks → services → lib/api/client → /api/v1
+```
+
+- `routes/`: telas e navegação;
+- `components/`: componentes e estados de interface;
+- `hooks/`: queries e mutations dos módulos;
+- `services/`: contratos e chamadas da API por domínio;
+- `lib/api/`: cliente HTTP e erros estruturados;
+- `lib/auth/`: sessão e capacidades recebidas do backend;
+- `lib/query/`: cache e chaves de consultas.
+
+Todas as operações passam pelo backend. O navegador não acessa banco ou storage
+diretamente. O login usa Microsoft pelo backend; a sessão é mantida por cookie
+HttpOnly, enviado com `credentials: "include"`. Não há senha local ou token da
+aplicação persistido no browser.
+
+O acesso autenticado depende da App Registration Microsoft e de usuário local
+ativo com as capacidades necessárias. Sem a configuração Microsoft, `/login`
+continua acessível e apresenta indisponibilidade ao tentar entrar.
+
+## Validação
+
+```bash
+npm --prefix frontend run typecheck
+npm --prefix frontend run build
+npm --prefix frontend run lint
+npm --prefix frontend ls
+npm --prefix frontend audit
+```
+
+Não são implementados testes automatizados nesta fase. O build gera somente
+arquivos estáticos em `frontend/dist/`. Os aliases de `tsconfig.json` são
+resolvidos pelo suporte nativo do Vite.
+
+## Containers
+
+- `Dockerfile.dev`: Node.js 24, npm e Vite em `5173`.
+- `Dockerfile.prod`: build estático e Nginx em `80`, com fallback para as rotas da
+  SPA, `/health.html` e proxy de `/api/v1` para `backend:3000`.
+- O limite do proxy permite o multipart de arquivos de até 10 MB; o backend
+  continua responsável por validar o tamanho e o conteúdo.
+
+Em produção, o frontend usa `/api/v1` na mesma origem. HTTPS e o domínio público
+são configurados pelo ambiente de implantação. As variáveis `VITE_*` usadas no
+build são públicas; mudanças nelas exigem novo build.
+
+O filtro por obra do dashboard aguarda suporte no contrato do backend. O
+indicador de duração permanece indisponível enquanto sua fórmula está em
+validação. O feed de notificações segue o contrato atual, que retorna os alertas
+e `unreadCount`, sem parâmetros de paginação.
