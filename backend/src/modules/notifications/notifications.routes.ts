@@ -1,0 +1,12 @@
+import { Router } from "express";
+import { z } from "zod";
+import { requireAuth, requirePermission } from "../../shared/middlewares/auth.js";
+import { validate } from "../../shared/validation/validate.js";
+import { NotificationsRepository } from "./notifications.repository.js";
+import { NotificationsService } from "./notifications.service.js";
+const query = z.object({ status: z.enum(["all", "unread"]).default("all") }).strict();
+const params = z.object({ id: z.string().regex(/^alert_[A-Za-z0-9_-]+$/).max(1000) }).strict();
+const service = new NotificationsService(new NotificationsRepository());
+export const notificationsRouter = Router();
+notificationsRouter.get("/", requireAuth, requirePermission("notifications.read"), validate({ query }), async (req, res, next) => { try { res.json(await service.list(req.auth!.userId, (req.query as unknown as z.infer<typeof query>).status)); } catch (e) { next(e); } });
+notificationsRouter.put("/:id/leitura", requireAuth, requirePermission("notifications.read_state"), validate({ params }), async (req, res, next) => { try { res.json(await service.markRead(req.auth!.userId, req.params.id as string)); } catch (e) { next(e); } });

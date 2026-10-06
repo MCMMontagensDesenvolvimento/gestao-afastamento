@@ -1,1 +1,91 @@
-# 
+# Estrutura portável. Host, domínio, proxy, secrets e provider de storage
+# permanecem pendentes e devem ser fornecidos pelo ambiente de produção.
+name: ${COMPOSE_PROJECT_NAME:-gestao-afastados}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/Recife}
+      POSTGRES_DB: ${POSTGRES_DB:-gestao_afastados}
+      POSTGRES_USER: ${POSTGRES_USER:-gestao_afastados}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [app]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-mcm_afastados_session}
+      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
+      SESSION_TOUCH_INTERVAL_SECONDS: ${SESSION_TOUCH_INTERVAL_SECONDS:-300}
+      COOKIE_SECURE: "true"
+      COOKIE_SAME_SITE: lax
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
+      MICROSOFT_TENANT_IDS: ${MICROSOFT_TENANT_IDS}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI}
+      MICROSOFT_ALLOWED_EMAIL_DOMAINS: mcm.eng.br,mcmmontagens.com.br
+      STORAGE_DRIVER: ${STORAGE_DRIVER}
+      LOCAL_STORAGE_PATH: /app/storage
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      MAX_UPLOAD_BYTES: 10485760
+    expose: ["3000"]
+    volumes:
+      - uploads_data:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [app]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+    expose: ["3000"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health.html').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [app]
+
+volumes:
+  db_data:
+  uploads_data:
+
+networks:
+  app:
+    driver: bridge

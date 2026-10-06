@@ -1,0 +1,355 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ClassificacaoSituacao {
+  ATIVO
+  ENCERRADO
+  APOSENTADO
+}
+
+enum IdentityProvider {
+  MICROSOFT
+}
+
+model User {
+  id                 String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String                 @db.VarChar(200)
+  email              String                 @unique(map: "uq_users_email") @db.VarChar(320)
+  isActive           Boolean                @default(true) @map("is_active")
+  lastLoginAt        DateTime?              @map("last_login_at") @db.Timestamptz(6)
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  externalIdentities ExternalIdentity[]
+  sessions           UserSession[]
+  roles              UserRole[]             @relation("UserRoles")
+  rolesAssigned      UserRole[]             @relation("UserRoleAssigner")
+  leavesCreated      Afastamento[]          @relation("AfastamentoCreator")
+  leavesUpdated      Afastamento[]          @relation("AfastamentoUpdater")
+  progressCreated    AfastamentoAndamento[] @relation("AndamentoCreator")
+  progressUpdated    AfastamentoAndamento[] @relation("AndamentoUpdater")
+  progressDeleted    AfastamentoAndamento[] @relation("AndamentoDeleter")
+  documentsUploaded  AfastamentoDocumento[] @relation("DocumentoUploader")
+  documentsDeleted   AfastamentoDocumento[] @relation("DocumentoDeleter")
+  notificationReads  NotificationRead[]
+  auditLogs          AuditLog[]
+
+  @@index([isActive], map: "idx_users_is_active")
+  @@map("users")
+}
+
+model ExternalIdentity {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String           @map("user_id") @db.Uuid
+  provider          IdentityProvider
+  providerSubject   String           @map("provider_subject") @db.VarChar(255)
+  providerTenantId  String           @map("provider_tenant_id") @db.VarChar(255)
+  emailAtLink       String?          @map("email_at_link") @db.VarChar(320)
+  displayNameAtLink String?          @map("display_name_at_link") @db.VarChar(200)
+  linkedAt          DateTime         @default(now()) @map("linked_at") @db.Timestamptz(6)
+  lastLoginAt       DateTime?        @map("last_login_at") @db.Timestamptz(6)
+  user              User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerTenantId, providerSubject], map: "uq_external_identities_provider_tenant_subject")
+  @@index([userId], map: "idx_external_identities_user_id")
+  @@map("external_identities")
+}
+
+model UserSession {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique(map: "uq_user_sessions_token_hash") @map("token_hash") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId], map: "idx_user_sessions_user_id")
+  @@index([expiresAt], map: "idx_user_sessions_expires_at")
+  @@index([revokedAt], map: "idx_user_sessions_revoked_at")
+  @@map("user_sessions")
+}
+
+model Role {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String           @unique(map: "uq_roles_code") @db.VarChar(100)
+  name        String           @db.VarChar(150)
+  description String?          @db.VarChar(500)
+  isActive    Boolean          @default(true) @map("is_active")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@index([isActive], map: "idx_roles_is_active")
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String           @unique(map: "uq_permissions_code") @db.VarChar(120)
+  description String?          @db.VarChar(500)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId       String   @map("user_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  assignedById String?  @map("assigned_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user         User     @relation("UserRoles", fields: [userId], references: [id], onDelete: Cascade)
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy   User?    @relation("UserRoleAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId], map: "idx_user_roles_role_id")
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId], map: "idx_role_permissions_permission_id")
+  @@map("role_permissions")
+}
+
+model Obra {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome          String        @unique(map: "uq_obras_nome") @db.VarChar(200)
+  ativo         Boolean       @default(true)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  colaboradores Colaborador[]
+  afastamentos  Afastamento[]
+
+  @@index([ativo], map: "idx_obras_ativo")
+  @@map("obras")
+}
+
+model Funcao {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome          String        @unique(map: "uq_funcoes_nome") @db.VarChar(200)
+  ativo         Boolean       @default(true)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  colaboradores Colaborador[]
+  afastamentos  Afastamento[]
+
+  @@index([ativo], map: "idx_funcoes_ativo")
+  @@map("funcoes")
+}
+
+model TipoBeneficio {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome         String        @unique(map: "uq_tipos_beneficio_nome") @db.VarChar(200)
+  ativo        Boolean       @default(true)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  afastamentos Afastamento[]
+
+  @@index([ativo], map: "idx_tipos_beneficio_ativo")
+  @@map("tipos_beneficio")
+}
+
+model SituacaoAfastamento {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome          String                @unique(map: "uq_situacoes_afastamento_nome") @db.VarChar(200)
+  classificacao ClassificacaoSituacao
+  ativo         Boolean               @default(true)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  afastamentos  Afastamento[]
+
+  @@index([ativo], map: "idx_situacoes_afastamento_ativo")
+  @@index([classificacao], map: "idx_situacoes_afastamento_classificacao")
+  @@map("situacoes_afastamento")
+}
+
+model TipoAndamento {
+  id         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome       String                 @unique(map: "uq_tipos_andamento_nome") @db.VarChar(200)
+  ativo      Boolean                @default(true)
+  createdAt  DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  andamentos AfastamentoAndamento[]
+
+  @@index([ativo], map: "idx_tipos_andamento_ativo")
+  @@map("tipos_andamento_afastamento")
+}
+
+model TipoDocumento {
+  id         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome       String                 @unique(map: "uq_tipos_documento_nome") @db.VarChar(200)
+  ativo      Boolean                @default(true)
+  createdAt  DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  documentos AfastamentoDocumento[]
+
+  @@index([ativo], map: "idx_tipos_documento_ativo")
+  @@map("tipos_documento_afastamento")
+}
+
+model Colaborador {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigoCorporativo String        @unique(map: "uq_colaboradores_codigo_corporativo") @map("codigo_corporativo") @db.VarChar(100)
+  nome              String        @db.VarChar(200)
+  contato           String?       @db.VarChar(255)
+  obraId            String        @map("obra_id") @db.Uuid
+  funcaoId          String        @map("funcao_id") @db.Uuid
+  ativo             Boolean       @default(true)
+  sourceSystem      String        @default("MANUAL") @map("source_system") @db.VarChar(100)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  obra              Obra          @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  funcao            Funcao        @relation(fields: [funcaoId], references: [id], onDelete: Restrict)
+  afastamentos      Afastamento[]
+
+  @@index([nome], map: "idx_colaboradores_nome")
+  @@index([obraId], map: "idx_colaboradores_obra_id")
+  @@index([funcaoId], map: "idx_colaboradores_funcao_id")
+  @@index([ativo], map: "idx_colaboradores_ativo")
+  @@map("colaboradores")
+}
+
+model Afastamento {
+  id                  String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  colaboradorId       String                 @map("colaborador_id") @db.Uuid
+  obraId              String                 @map("obra_id") @db.Uuid
+  funcaoId            String                 @map("funcao_id") @db.Uuid
+  situacaoId          String                 @map("situacao_id") @db.Uuid
+  tipoBeneficioId     String?                @map("tipo_beneficio_id") @db.Uuid
+  dataAfastamento     DateTime               @map("data_afastamento") @db.Date
+  dataFimBeneficio    DateTime?              @map("data_fim_beneficio") @db.Date
+  dataRetornoPrevista DateTime?              @map("data_retorno_prevista") @db.Date
+  dataRetornoEfetiva  DateTime?              @map("data_retorno_efetiva") @db.Date
+  causaCid            String?                @map("causa_cid")
+  observacoes         String?
+  createdById         String                 @map("created_by_id") @db.Uuid
+  updatedById         String?                @map("updated_by_id") @db.Uuid
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  colaborador         Colaborador            @relation(fields: [colaboradorId], references: [id], onDelete: Restrict)
+  obra                Obra                   @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  funcao              Funcao                 @relation(fields: [funcaoId], references: [id], onDelete: Restrict)
+  situacao            SituacaoAfastamento    @relation(fields: [situacaoId], references: [id], onDelete: Restrict)
+  tipoBeneficio       TipoBeneficio?         @relation(fields: [tipoBeneficioId], references: [id], onDelete: Restrict)
+  createdBy           User                   @relation("AfastamentoCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy           User?                  @relation("AfastamentoUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+  andamentos          AfastamentoAndamento[]
+  documentos          AfastamentoDocumento[]
+
+  @@index([colaboradorId], map: "idx_afastamentos_colaborador_id")
+  @@index([obraId], map: "idx_afastamentos_obra_id")
+  @@index([funcaoId], map: "idx_afastamentos_funcao_id")
+  @@index([situacaoId], map: "idx_afastamentos_situacao_id")
+  @@index([tipoBeneficioId], map: "idx_afastamentos_tipo_beneficio_id")
+  @@index([dataAfastamento], map: "idx_afastamentos_data_afastamento")
+  @@index([dataFimBeneficio], map: "idx_afastamentos_data_fim_beneficio")
+  @@index([dataRetornoPrevista], map: "idx_afastamentos_data_retorno_prevista")
+  @@index([situacaoId, obraId], map: "idx_afastamentos_situacao_obra")
+  @@index([situacaoId, dataRetornoPrevista], map: "idx_afastamentos_situacao_retorno")
+  @@index([situacaoId, dataFimBeneficio], map: "idx_afastamentos_situacao_beneficio")
+  @@map("afastamentos")
+}
+
+model AfastamentoAndamento {
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  afastamentoId   String                 @map("afastamento_id") @db.Uuid
+  tipoAndamentoId String                 @map("tipo_andamento_id") @db.Uuid
+  dataAndamento   DateTime               @map("data_andamento") @db.Date
+  descricao       String
+  proximaAcao     String?                @map("proxima_acao")
+  dataProximaAcao DateTime?              @map("data_proxima_acao") @db.Date
+  createdById     String                 @map("created_by_id") @db.Uuid
+  updatedById     String?                @map("updated_by_id") @db.Uuid
+  deletedAt       DateTime?              @map("deleted_at") @db.Timestamptz(6)
+  deletedById     String?                @map("deleted_by_id") @db.Uuid
+  deleteReason    String?                @map("delete_reason")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  afastamento     Afastamento            @relation(fields: [afastamentoId], references: [id], onDelete: Restrict)
+  tipoAndamento   TipoAndamento          @relation(fields: [tipoAndamentoId], references: [id], onDelete: Restrict)
+  createdBy       User                   @relation("AndamentoCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy       User?                  @relation("AndamentoUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+  deletedBy       User?                  @relation("AndamentoDeleter", fields: [deletedById], references: [id], onDelete: Restrict)
+  documentos      AfastamentoDocumento[]
+
+  @@index([afastamentoId, dataAndamento], map: "idx_andamentos_afastamento_data")
+  @@index([dataProximaAcao], map: "idx_andamentos_data_proxima_acao")
+  @@index([deletedAt], map: "idx_andamentos_deleted_at")
+  @@map("afastamento_andamentos")
+}
+
+model AfastamentoDocumento {
+  id              String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  afastamentoId   String                @map("afastamento_id") @db.Uuid
+  andamentoId     String?               @map("andamento_id") @db.Uuid
+  tipoDocumentoId String                @map("tipo_documento_id") @db.Uuid
+  originalName    String                @map("original_name") @db.VarChar(255)
+  storageKey      String                @unique(map: "uq_documentos_storage_key") @map("storage_key") @db.VarChar(500)
+  mimeType        String                @map("mime_type") @db.VarChar(150)
+  sizeBytes       BigInt                @map("size_bytes")
+  sha256          String?               @db.VarChar(64)
+  uploadedById    String                @map("uploaded_by_id") @db.Uuid
+  deletedAt       DateTime?             @map("deleted_at") @db.Timestamptz(6)
+  deletedById     String?               @map("deleted_by_id") @db.Uuid
+  deleteReason    String?               @map("delete_reason")
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  afastamento     Afastamento           @relation(fields: [afastamentoId], references: [id], onDelete: Restrict)
+  andamento       AfastamentoAndamento? @relation(fields: [andamentoId], references: [id], onDelete: Restrict)
+  tipoDocumento   TipoDocumento         @relation(fields: [tipoDocumentoId], references: [id], onDelete: Restrict)
+  uploadedBy      User                  @relation("DocumentoUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  deletedBy       User?                 @relation("DocumentoDeleter", fields: [deletedById], references: [id], onDelete: Restrict)
+
+  @@index([afastamentoId], map: "idx_documentos_afastamento_id")
+  @@index([andamentoId], map: "idx_documentos_andamento_id")
+  @@index([tipoDocumentoId], map: "idx_documentos_tipo_documento_id")
+  @@index([deletedAt], map: "idx_documentos_deleted_at")
+  @@map("afastamento_documentos")
+}
+
+model NotificationRead {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  alertKey  String   @map("alert_key") @db.VarChar(500)
+  readAt    DateTime @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, alertKey], map: "uq_notification_reads_user_alert")
+  @@index([userId], map: "idx_notification_reads_user_id")
+  @@index([readAt], map: "idx_notification_reads_read_at")
+  @@map("notification_reads")
+}
+
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(150)
+  entityType  String   @map("entity_type") @db.VarChar(150)
+  entityId    String?  @map("entity_id") @db.Uuid
+  metadata    Json?
+  requestId   String?  @map("request_id") @db.VarChar(128)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId], map: "idx_audit_logs_actor_user_id")
+  @@index([entityType, entityId], map: "idx_audit_logs_entity")
+  @@index([createdAt], map: "idx_audit_logs_created_at")
+  @@index([requestId], map: "idx_audit_logs_request_id")
+  @@map("audit_logs")
+}

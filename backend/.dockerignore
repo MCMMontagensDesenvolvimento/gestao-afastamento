@@ -1,1 +1,15 @@
-# 
+node_modules
+dist
+build
+coverage
+.env
+.env.*
+!.env.example
+.git
+*.log
+logs
+.cache
+.tmp
+.DS_Store
+storage/*
+!storage/.gitkeep

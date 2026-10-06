@@ -1,1 +1,16 @@
-# 
+FROM node:24-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY prisma ./prisma
+RUN npm run prisma:generate
+
+COPY tsconfig.json eslint.config.js ./
+COPY src ./src
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]

@@ -1,1 +1,38 @@
-# 
+# Environment
+.env
+.env.*
+!*.env.example
+!**/*.env.example
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Builds
+frontend/dist/
+frontend/.output/
+frontend/.wrangler/
+backend/dist/
+dist/
+build/
+
+# Validation
+coverage/
+
+# Logs and caches
+logs/
+*.log
+.vite/
+.cache/
+.tmp/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Runtime storage
+backend/storage/*
+!backend/storage/.gitkeep

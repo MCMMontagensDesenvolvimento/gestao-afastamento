@@ -1,0 +1,15 @@
+import { Router } from "express";
+import { requireAuth, requirePermission } from "../../shared/middlewares/auth.js";
+import { uuidParams, validate } from "../../shared/validation/validate.js";
+import { auditService } from "../audit/audit.routes.js";
+import { ProgressController } from "./progress.controller.js";
+import { ProgressRepository } from "./progress.repository.js";
+import { createProgressBody, deleteProgressBody, updateProgressBody } from "./progress.schema.js";
+import { ProgressService } from "./progress.service.js";
+const controller = new ProgressController(new ProgressService(new ProgressRepository(), auditService));
+export const leaveProgressRouter = Router();
+leaveProgressRouter.get("/:id/andamentos", requireAuth, requirePermission("progress.read"), validate({ params: uuidParams }), controller.list);
+leaveProgressRouter.post("/:id/andamentos", requireAuth, requirePermission("progress.manage"), validate({ params: uuidParams, body: createProgressBody }), controller.create);
+export const progressRouter = Router();
+progressRouter.patch("/:id", requireAuth, requirePermission("progress.manage"), validate({ params: uuidParams, body: updateProgressBody }), controller.update);
+progressRouter.delete("/:id", requireAuth, requirePermission("progress.manage"), validate({ params: uuidParams, body: deleteProgressBody }), controller.remove);
