@@ -13,3 +13,9 @@ logs
 .DS_Store
 storage/*
 !storage/.gitkeep
+uploads
+backups
+dumps
+*.dump
+*.sql.gz
+*.bak

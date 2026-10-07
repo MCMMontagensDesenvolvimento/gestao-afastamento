@@ -20,6 +20,12 @@ export function createApp(): express.Express {
     pinoHttp({
       logger,
       genReqId: (req) => req.requestId,
+      wrapSerializers: false,
+      serializers: {
+        req: (req: express.Request) => ({ id: req.requestId, method: req.method, path: req.url.split("?")[0] }),
+        res: (res: express.Response) => ({ statusCode: res.statusCode }),
+        err: (error: unknown) => ({ type: error instanceof Error ? error.constructor.name : "UnknownError" }),
+      },
       autoLogging: {
         ignore: (req) => req.url?.startsWith("/api/v1/auth/callback") ?? false,
       },

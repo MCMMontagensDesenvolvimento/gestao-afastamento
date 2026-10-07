@@ -1,24 +1,24 @@
 openapi: 3.1.0
-info:
-  title: MCM Gestão de Afastados API
-  version: 0.2.0
-  description: API interna. Datas civis usam YYYY-MM-DD e timestamps usam ISO 8601 UTC.
+info: {title: MCM Gestão de Afastados API, version: 0.2.0, description: 'API interna. Datas civis usam YYYY-MM-DD e timestamps usam ISO 8601 UTC.
+    Entradas textuais são aparadas quando definido no schema de validação. O backend envia X-Request-ID em todas as respostas e aceita um identificador
+    de correlação com 1–128 caracteres alfanuméricos, ponto, hífen ou sublinhado. Erros seguem ApiError; corpos JSON têm limite de 1 MiB. x-permission
+    com uma lista exige todas as capabilities. A proteção do último administrador preserva ao menos um usuário ativo cuja união de papéis ativos
+    inclui session.access e permissions.manage.'}
 servers:
-  - url: http://localhost:3000
-    description: Desenvolvimento local
+- {url: 'http://localhost:3000', description: Desenvolvimento local}
 security:
-  - sessionCookie: []
+- sessionCookie: []
 tags:
-  - { name: Autenticação }
-  - { name: Acessos }
-  - { name: Cadastros }
-  - { name: Colaboradores }
-  - { name: Afastamentos }
-  - { name: Andamentos }
-  - { name: Documentos }
-  - { name: Notificações }
-  - { name: Dashboard }
-  - { name: Auditoria }
+- {name: Autenticação}
+- {name: Acessos}
+- {name: Cadastros}
+- {name: Colaboradores}
+- {name: Afastamentos}
+- {name: Andamentos}
+- {name: Documentos}
+- {name: Notificações}
+- {name: Dashboard}
+- {name: Auditoria}
 paths:
   /health:
     get:
@@ -26,361 +26,1011 @@ paths:
       tags: [Autenticação]
       summary: Liveness
       responses:
-        '200': { description: Serviço ativo, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
+        '200':
+          description: Serviço ativo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '500': {$ref: '#/components/responses/InternalError'}
   /health/db:
     get:
       security: []
       tags: [Autenticação]
       summary: Readiness do PostgreSQL
       responses:
-        '200': { description: Banco acessível, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
-        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+        '200':
+          description: Banco acessível
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/auth/login:
     get:
       security: []
       tags: [Autenticação]
       summary: Inicia Authorization Code Flow Microsoft com PKCE
       parameters:
-        - { name: returnTo, in: query, schema: { type: string }, description: Rota interna após autenticação }
+      - name: returnTo
+        in: query
+        schema: {type: string}
+        description: Rota interna sem controles, barras invertidas nem origem externa; padrão /.
       responses:
-        '302': { description: Redirecionamento para o Microsoft Entra ID }
+        '302':
+          description: Redirecionamento para o Microsoft Entra ID
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
         '422':
           description: Entrada inválida; navegação HTML recebe mensagem amigável e link para retornar ao login.
           content:
-            application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
-            text/html: { schema: { type: string } }
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+            text/html:
+              schema: {type: string}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
         '503':
           description: Microsoft não configurado ou indisponível; preserva status e requestId em JSON ou página HTML amigável.
           content:
-            application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
-            text/html: { schema: { type: string } }
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+            text/html:
+              schema: {type: string}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /api/v1/auth/callback:
     get:
       security: []
       tags: [Autenticação]
       summary: Valida callback OIDC, cria sessão local e redireciona
       parameters:
-        - { name: code, in: query, schema: { type: string } }
-        - { name: state, in: query, schema: { type: string } }
-        - { name: error, in: query, schema: { type: string } }
+      - name: code
+        in: query
+        schema: {type: string}
+      - name: state
+        in: query
+        schema: {type: string}
+      - name: error
+        in: query
+        schema: {type: string}
       responses:
-        '302': { description: Redirecionamento interno após sucesso ou falha tratada }
+        '302':
+          description: Redirecionamento interno após sucesso ou falha tratada
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /api/v1/auth/me:
     get:
       tags: [Autenticação]
       x-permission: session.access
       summary: Sessão, papéis e capabilities atuais
       responses:
-        '200': { description: Sessão atual, content: { application/json: { schema: { $ref: '#/components/schemas/AuthMeResponse' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '200':
+          description: Sessão atual
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthMeResponse'}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/auth/logout:
     post:
       tags: [Autenticação]
       x-permission: session.access
       summary: Revoga a sessão corrente e limpa o cookie
       responses:
-        '204': { description: Sessão revogada }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        '204':
+          description: Sessão revogada
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/usuarios:
     get:
       tags: [Acessos]
       x-permission: users.read
       summary: Lista usuários locais
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
-        - { $ref: '#/components/parameters/Search' }
-        - { name: ativo, in: query, schema: { type: boolean } }
-        - { name: roleId, in: query, schema: { type: string, format: uuid } }
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      - name: roleId
+        in: query
+        schema: {type: string, format: uuid}
       responses:
-        '200': { $ref: '#/components/responses/Paginated' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '200': {$ref: '#/components/responses/UserWithRelationsPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
       tags: [Acessos]
       x-permission: users.manage
       summary: Pré-cadastra usuário corporativo, sem senha
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/UserCreate' } } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreate'}
       responses:
-        '201': { $ref: '#/components/responses/ItemCreated' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '201': {$ref: '#/components/responses/UserItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/usuarios/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     get:
       tags: [Acessos]
       x-permission: users.read
       summary: Obtém usuário e seus papéis
       responses:
-        '200': { $ref: '#/components/responses/Item' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '200': {$ref: '#/components/responses/UserWithRelationsItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
     patch:
       tags: [Acessos]
       x-permission: users.manage
       summary: Atualiza o nome local do usuário
       requestBody:
         required: true
-        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { name: { type: string } }, minProperties: 1 } } }
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: {type: string, minLength: 2, maxLength: 200}
+              minProperties: 1
       responses:
-        '200': { $ref: '#/components/responses/Item' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '200': {$ref: '#/components/responses/UserItem'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/usuarios/{id}/ativar:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     post:
       tags: [Acessos]
       x-permission: users.manage
       summary: Ativa usuário
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/UserItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/usuarios/{id}/inativar:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     post:
       tags: [Acessos]
       x-permission: users.manage
       summary: Inativa usuário e revoga suas sessões
-      responses: { '200': { $ref: '#/components/responses/Item' }, '409': { $ref: '#/components/responses/Conflict' } }
+      responses:
+        '200': {$ref: '#/components/responses/UserItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/usuarios/{id}/papeis:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     put:
       tags: [Acessos]
       x-permission: permissions.manage
       summary: Substitui papéis do usuário em transação
       requestBody:
         required: true
-        content: { application/json: { schema: { type: object, required: [roleIds], additionalProperties: false, properties: { roleIds: { type: array, items: { type: string, format: uuid }, uniqueItems: true } } } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roleIds]
+              additionalProperties: false
+              properties:
+                roleIds:
+                  type: array
+                  items: {type: string, format: uuid}
+                  maxItems: 100
+                  description: Duplicatas são desconsideradas; lista vazia remove vínculos respeitando a proteção do último administrador.
+      responses:
+        '200': {$ref: '#/components/responses/UserWithRelationsItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/papeis:
     get:
       tags: [Acessos]
       x-permission: users.read
       summary: Lista papéis e permissões
-      responses: { '200': { $ref: '#/components/responses/List' } }
+      responses:
+        '200': {$ref: '#/components/responses/RoleList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
       tags: [Acessos]
       x-permission: permissions.manage
       summary: Cria papel configurável; SMS permanece bloqueado
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/RoleWrite' } } }
-      responses: { '201': { $ref: '#/components/responses/ItemCreated' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoleWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/RoleItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/papeis/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     patch:
       tags: [Acessos]
       x-permission: permissions.manage
       summary: Edita ou inativa papel
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/RoleUpdate' } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '409': { $ref: '#/components/responses/Conflict' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoleUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/RoleItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/papeis/{id}/permissoes:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     put:
       tags: [Acessos]
       x-permission: permissions.manage
       summary: Substitui capabilities do papel em transação
       requestBody:
         required: true
-        content: { application/json: { schema: { type: object, required: [permissionIds], additionalProperties: false, properties: { permissionIds: { type: array, items: { type: string, format: uuid }, uniqueItems: true } } } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permissionIds]
+              additionalProperties: false
+              properties:
+                permissionIds:
+                  type: array
+                  items: {type: string, format: uuid}
+                  maxItems: 100
+                  description: Duplicatas são desconsideradas; lista vazia remove vínculos respeitando a proteção do último administrador.
+      responses:
+        '200': {$ref: '#/components/responses/RoleItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/permissoes:
     get:
       tags: [Acessos]
       x-permission: permissions.manage
       summary: Lista catálogo imutável de capabilities
-      responses: { '200': { $ref: '#/components/responses/List' } }
-  /api/v1/obras: &catalogCollection
-    get: &catalogList
+      responses:
+        '200': {$ref: '#/components/responses/PermissionList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/obras:
+    get:
       tags: [Cadastros]
       x-permission: settings.manage
       summary: Lista itens ativos e inativos com paginação
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
-        - { $ref: '#/components/parameters/Search' }
-        - { name: ativo, in: query, schema: { type: boolean } }
-      responses: { '200': { $ref: '#/components/responses/Paginated' }, '422': { $ref: '#/components/responses/ValidationError' } }
-    post: &catalogCreate
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
       tags: [Cadastros]
       x-permission: settings.manage
       summary: Cria item de cadastro ativo
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/CatalogWrite' } } }
-      responses: { '201': { $ref: '#/components/responses/ItemCreated' }, '409': { $ref: '#/components/responses/Conflict' } }
-  /api/v1/obras/{id}: &catalogItem
-    parameters: [{ $ref: '#/components/parameters/Id' }]
-    patch: &catalogUpdate
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/CatalogItemItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/obras/{id}:
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    patch:
       tags: [Cadastros]
       x-permission: settings.manage
       summary: Edita ou ativa/inativa item sem apagar histórico
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/CatalogUpdate' } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' } }
-  /api/v1/funcoes: *catalogCollection
-  /api/v1/funcoes/{id}: *catalogItem
-  /api/v1/tipos-beneficio: *catalogCollection
-  /api/v1/tipos-beneficio/{id}: *catalogItem
-  /api/v1/tipos-andamento: *catalogCollection
-  /api/v1/tipos-andamento/{id}: *catalogItem
-  /api/v1/tipos-documento: *catalogCollection
-  /api/v1/tipos-documento/{id}: *catalogItem
-  /api/v1/situacoes-afastamento:
-    get: *catalogList
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/funcoes:
+    get:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Lista itens ativos e inativos com paginação
+      parameters:
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
-      <<: *catalogCreate
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Cria item de cadastro ativo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/CatalogItemItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/funcoes/{id}:
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    patch:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Edita ou ativa/inativa item sem apagar histórico
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/tipos-beneficio:
+    get:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Lista itens ativos e inativos com paginação
+      parameters:
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Cria item de cadastro ativo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/CatalogItemItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/tipos-beneficio/{id}:
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    patch:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Edita ou ativa/inativa item sem apagar histórico
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/tipos-andamento:
+    get:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Lista itens ativos e inativos com paginação
+      parameters:
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Cria item de cadastro ativo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/CatalogItemItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/tipos-andamento/{id}:
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    patch:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Edita ou ativa/inativa item sem apagar histórico
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/tipos-documento:
+    get:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Lista itens ativos e inativos com paginação
+      parameters:
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Cria item de cadastro ativo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/CatalogItemItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/tipos-documento/{id}:
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    patch:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Edita ou ativa/inativa item sem apagar histórico
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CatalogUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/CatalogItemItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/situacoes-afastamento:
+    get:
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Lista itens ativos e inativos com paginação
+      parameters:
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/LeaveStatusPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      tags: [Cadastros]
+      x-permission: settings.manage
       summary: Cria situação com classificação controlada
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/LeaveStatusWrite' } } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LeaveStatusWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/LeaveStatusItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/situacoes-afastamento/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     patch:
-      <<: *catalogUpdate
+      tags: [Cadastros]
+      x-permission: settings.manage
+      summary: Edita ou ativa/inativa item sem apagar histórico
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/LeaveStatusUpdate' } } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LeaveStatusUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/LeaveStatusItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/colaboradores:
     get:
       tags: [Colaboradores]
       x-permission: employees.read
       summary: Lista e pesquisa colaboradores
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
-        - { $ref: '#/components/parameters/Search' }
-        - { name: obraId, in: query, schema: { type: string, format: uuid } }
-        - { name: funcaoId, in: query, schema: { type: string, format: uuid } }
-        - { name: ativo, in: query, schema: { type: boolean } }
-        - { name: sortBy, in: query, schema: { type: string, enum: [nome, codigoCorporativo, createdAt], default: nome } }
-        - { $ref: '#/components/parameters/SortDirection' }
-      responses: { '200': { $ref: '#/components/responses/Paginated' }, '422': { $ref: '#/components/responses/ValidationError' } }
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: obraId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: funcaoId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: ativo
+        in: query
+        schema: {type: boolean}
+      - name: sortBy
+        in: query
+        schema:
+          type: string
+          enum: [nome, codigoCorporativo, createdAt]
+          default: nome
+      - {$ref: '#/components/parameters/SortDirection'}
+      responses:
+        '200': {$ref: '#/components/responses/EmployeePage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
       tags: [Colaboradores]
       x-permission: employees.manage
       summary: Cria colaborador sem CPF
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeWrite' } } }
-      responses: { '201': { $ref: '#/components/responses/ItemCreated' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EmployeeWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/EmployeeItem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/colaboradores/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     get:
       tags: [Colaboradores]
       x-permission: employees.read
       summary: Obtém colaborador
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/EmployeeItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
     patch:
       tags: [Colaboradores]
       x-permission: employees.manage
       summary: Edita dados e contexto atual
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeUpdate' } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EmployeeUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/EmployeeItem'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/colaboradores/{id}/ativar:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
-    post: &employeeState
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    post:
       tags: [Colaboradores]
       x-permission: employees.manage
       summary: Altera estado do colaborador sem excluir histórico
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/EmployeeItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/colaboradores/{id}/inativar:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
-    post: *employeeState
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Colaboradores]
+      x-permission: employees.manage
+      summary: Altera estado do colaborador sem excluir histórico
+      responses:
+        '200': {$ref: '#/components/responses/EmployeeItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/colaboradores/{id}/historico:
     parameters:
-      - { $ref: '#/components/parameters/Id' }
-      - { $ref: '#/components/parameters/Page' }
-      - { $ref: '#/components/parameters/PerPage' }
+    - {$ref: '#/components/parameters/Id'}
+    - {$ref: '#/components/parameters/Page'}
+    - {$ref: '#/components/parameters/PerPage'}
     get:
       tags: [Colaboradores]
       x-permission: [employees.read, leaves.read]
       summary: Histórico derivado dos afastamentos existentes
-      responses: { '200': { $ref: '#/components/responses/Paginated' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/EmployeeHistory'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/afastamentos:
     get:
       tags: [Afastamentos]
       x-permission: leaves.read
       summary: Lista afastamentos com filtros e paginação
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
-        - { $ref: '#/components/parameters/Search' }
-        - { name: colaboradorId, in: query, schema: { type: string, format: uuid } }
-        - { name: obraId, in: query, schema: { type: string, format: uuid } }
-        - { name: funcaoId, in: query, schema: { type: string, format: uuid } }
-        - { name: tipoBeneficioId, in: query, schema: { type: string, format: uuid } }
-        - { name: situacaoId, in: query, schema: { type: string, format: uuid } }
-        - { name: classificacao, in: query, schema: { type: string, enum: [ATIVO, ENCERRADO, APOSENTADO] } }
-        - { name: sortBy, in: query, schema: { type: string, enum: [dataAfastamento, dataRetornoPrevista, dataFimBeneficio, createdAt], default: dataAfastamento } }
-        - { $ref: '#/components/parameters/SortDirection' }
-      responses: { '200': { $ref: '#/components/responses/Paginated' }, '422': { $ref: '#/components/responses/ValidationError' } }
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - {$ref: '#/components/parameters/Search'}
+      - name: colaboradorId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: obraId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: funcaoId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: tipoBeneficioId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: situacaoId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: classificacao
+        in: query
+        schema:
+          type: string
+          enum: [ATIVO, ENCERRADO, APOSENTADO]
+      - name: sortBy
+        in: query
+        schema:
+          type: string
+          enum: [dataAfastamento, dataRetornoPrevista, dataFimBeneficio, createdAt]
+          default: dataAfastamento
+      - {$ref: '#/components/parameters/SortDirection'}
+      responses:
+        '200': {$ref: '#/components/responses/LeavePage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
       tags: [Afastamentos]
       x-permission: leaves.create
       summary: Cria afastamento com snapshot de obra e função
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/LeaveWrite' } } }
-      responses: { '201': { $ref: '#/components/responses/ItemCreated' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LeaveWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/LeaveItem'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/afastamentos/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     get:
       tags: [Afastamentos]
       x-permission: leaves.read
       summary: Detalhe do afastamento
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/LeaveItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
     patch:
       tags: [Afastamentos]
       x-permission: leaves.update
       summary: Edita ou encerra por situação; não existe DELETE
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/LeaveUpdate' } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LeaveUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/LeaveItem'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/afastamentos/{id}/andamentos:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     get:
       tags: [Andamentos]
       x-permission: progress.read
       summary: Lista timeline sem itens excluídos
-      responses: { '200': { $ref: '#/components/responses/List' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/ProgressList'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
       tags: [Andamentos]
       x-permission: progress.manage
       summary: Cria andamento
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/ProgressWrite' } } }
-      responses: { '201': { $ref: '#/components/responses/ItemCreated' }, '422': { $ref: '#/components/responses/ValidationError' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProgressWrite'}
+      responses:
+        '201': {$ref: '#/components/responses/ProgressItem'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/andamentos/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     patch:
       tags: [Andamentos]
       x-permission: progress.manage
       summary: Edita andamento não excluído
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/ProgressUpdate' } } }
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProgressUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/ProgressItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
     delete:
       tags: [Andamentos]
       x-permission: progress.manage
       summary: Exclusão lógica
       requestBody:
-        content: { application/json: { schema: { $ref: '#/components/schemas/DeleteReason' } } }
-      responses: { '204': { description: Tombstone criado }, '404': { $ref: '#/components/responses/NotFound' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeleteReason'}
+      responses:
+        '204':
+          description: Tombstone criado
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/afastamentos/{id}/documentos:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     get:
       tags: [Documentos]
       x-permission: documents.read
       summary: Lista metadados públicos de documentos
-      responses: { '200': { $ref: '#/components/responses/List' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/DocumentList'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
     post:
       tags: [Documentos]
       x-permission: documents.upload
@@ -393,116 +1043,523 @@ paths:
               type: object
               required: [file, tipoDocumentoId]
               properties:
-                file: { type: string, format: binary, description: "PDF, JPEG, PNG, DOC ou DOCX" }
-                tipoDocumentoId: { type: string, format: uuid }
-                andamentoId: { type: string, format: uuid }
-      responses: { '201': { $ref: '#/components/responses/ItemCreated' }, '422': { $ref: '#/components/responses/ValidationError' } }
+                file: {type: string, format: binary, description: 'Um arquivo de até 10 MiB (10485760 bytes no padrão). Extensão, MIME informado
+                    e assinatura devem concordar: PDF, JPEG, PNG, DOC ou DOCX. Limite configurável por MAX_UPLOAD_BYTES.'}
+                tipoDocumentoId: {type: string, format: uuid}
+                andamentoId: {type: string, format: uuid}
+              additionalProperties: false
+            encoding:
+              file: {contentType: 'application/pdf, image/jpeg, image/png, application/msword, application/x-cfb, application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+      responses:
+        '201': {$ref: '#/components/responses/DocumentItem'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/documentos/{id}/download:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     get:
       tags: [Documentos]
       x-permission: documents.download
       summary: Download autorizado via backend
       responses:
-        '200': { description: Conteúdo privado, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        '200':
+          description: Conteúdo privado
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+            image/jpeg:
+              schema: {type: string, format: binary}
+            image/png:
+              schema: {type: string, format: binary}
+            application/msword:
+              schema: {type: string, format: binary}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: {type: string, format: binary}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+            Content-Disposition:
+              description: attachment com nome original sanitizado
+              schema: {type: string}
+            Content-Length:
+              schema: {type: integer, minimum: 0}
+            Cache-Control:
+              schema: {const: 'private, no-store'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/documentos/{id}:
-    parameters: [{ $ref: '#/components/parameters/Id' }]
+    parameters:
+    - {$ref: '#/components/parameters/Id'}
     delete:
       tags: [Documentos]
       x-permission: documents.delete
       summary: Remove binário e mantém tombstone
       requestBody:
-        content: { application/json: { schema: { $ref: '#/components/schemas/DeleteReason' } } }
-      responses: { '204': { description: Documento removido }, '404': { $ref: '#/components/responses/NotFound' } }
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeleteReason'}
+      responses:
+        '204':
+          description: Documento removido
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/notificacoes:
     get:
       tags: [Notificações]
       x-permission: notifications.read
       summary: Alertas derivados combinados com leitura do usuário
       parameters:
-        - { name: status, in: query, schema: { type: string, enum: [all, unread], default: all } }
-      responses: { '200': { description: Alertas e unreadCount, content: { application/json: { schema: { $ref: '#/components/schemas/NotificationList' } } } } }
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum: [all, unread]
+          default: all
+      responses:
+        '200':
+          description: Alertas e unreadCount
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationList'}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/notificacoes/{id}/leitura:
     parameters:
-      - { name: id, in: path, required: true, schema: { type: string, pattern: '^alert_[A-Za-z0-9_-]+$' } }
+    - name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: '^alert_[A-Za-z0-9_-]+$', maxLength: 1000}
     put:
       tags: [Notificações]
       x-permission: notifications.read_state
       summary: Marca alerta atual como lido somente para a sessão corrente
-      responses: { '200': { $ref: '#/components/responses/Item' }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses:
+        '200': {$ref: '#/components/responses/NotificationReadItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/dashboard:
     get:
       tags: [Dashboard]
       x-permission: dashboard.read
       summary: Indicadores e prioridades; duração permanece pendente de fórmula
-      responses: { '200': { description: Dashboard, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardResponse' } } } } }
+      responses:
+        '200':
+          description: Dashboard
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardResponse'}
+          headers:
+            X-Request-ID:
+              description: Identificador de correlação
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/auditoria:
     get:
       tags: [Auditoria]
       x-permission: audit.read
       summary: Consulta trilha sanitizada de auditoria
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
-        - { name: actorUserId, in: query, schema: { type: string, format: uuid } }
-        - { name: entityType, in: query, schema: { type: string } }
-        - { name: entityId, in: query, schema: { type: string, format: uuid } }
-        - { name: action, in: query, schema: { type: string } }
-        - { name: dateFrom, in: query, schema: { type: string, format: date-time } }
-        - { name: dateTo, in: query, schema: { type: string, format: date-time } }
-        - { $ref: '#/components/parameters/SortDirection' }
-      responses: { '200': { $ref: '#/components/responses/Paginated' }, '422': { $ref: '#/components/responses/ValidationError' } }
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - name: actorUserId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: entityType
+        in: query
+        schema: {type: string, maxLength: 150}
+      - name: entityId
+        in: query
+        schema: {type: string, format: uuid}
+      - name: action
+        in: query
+        schema: {type: string, maxLength: 150}
+      - name: dateFrom
+        in: query
+        schema: {type: string, format: date-time}
+      - name: dateTo
+        in: query
+        schema: {type: string, format: date-time}
+      - {$ref: '#/components/parameters/SortDirection'}
+      responses:
+        '200': {$ref: '#/components/responses/AuditRecordPage'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
-    sessionCookie:
-      type: apiKey
-      in: cookie
-      name: mcm_afastados_session
-      description: Token opaco; somente o hash SHA-256 é persistido.
+    sessionCookie: {type: apiKey, in: cookie, name: mcm_afastados_session, description: 'Cookie HttpOnly com token opaco; somente o hash SHA-256
+        é persistido. Nome padrão mostrado; SESSION_COOKIE_NAME pode configurá-lo. Secure obrigatório em produção; SameSite configurável, padrão
+        Lax.'}
   parameters:
-    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
-    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
-    PerPage: { name: perPage, in: query, schema: { type: integer, enum: [10, 20, 50, 100], default: 10 } }
-    Search: { name: search, in: query, schema: { type: string, maxLength: 200 } }
-    SortDirection: { name: sortDirection, in: query, schema: { type: string, enum: [asc, desc], default: asc } }
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, minimum: 1, default: 1}
+    PerPage:
+      name: perPage
+      in: query
+      schema:
+        type: integer
+        enum: [10, 20, 50, 100]
+        default: 10
+    Search:
+      name: search
+      in: query
+      schema: {type: string, maxLength: 200}
+    SortDirection:
+      name: sortDirection
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
   responses:
-    Item: { description: Item, content: { application/json: { schema: { $ref: '#/components/schemas/ItemResponse' } } } }
-    ItemCreated: { description: Item criado, content: { application/json: { schema: { $ref: '#/components/schemas/ItemResponse' } } } }
-    List: { description: Lista, content: { application/json: { schema: { $ref: '#/components/schemas/ListResponse' } } } }
-    Paginated: { description: Lista paginada, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedResponse' } } } }
-    Unauthorized: { description: Sem sessão válida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    Forbidden: { description: Capability insuficiente, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    NotFound: { description: Recurso não encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    Conflict: { description: Duplicidade ou conflito de estado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    ValidationError: { description: Entrada ou regra inválida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    ServiceUnavailable: { description: Dependência/configuração indisponível, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    Unauthorized:
+      description: Sem sessão válida
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    Forbidden:
+      description: Capability insuficiente
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    Conflict:
+      description: Duplicidade ou conflito de estado, incluindo remoção do último administrador com session.access e permissions.manage.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    ValidationError:
+      description: Entrada ou regra inválida
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    ServiceUnavailable:
+      description: Dependência/configuração indisponível
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    CatalogItemItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/CatalogItemResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    LeaveStatusItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LeaveStatusResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    EmployeeItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/EmployeeResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    UserItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UserResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    UserWithRelationsItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UserWithRelationsResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    RoleItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RoleResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    LeaveItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LeaveResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    ProgressItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ProgressResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    DocumentItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/DocumentResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    NotificationReadItem:
+      description: Item
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/NotificationReadResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    RoleList:
+      description: Lista sem paginação
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RoleListResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    PermissionList:
+      description: Lista sem paginação
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PermissionListResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    ProgressList:
+      description: Lista sem paginação
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ProgressListResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    DocumentList:
+      description: Lista sem paginação
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/DocumentListResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    CatalogItemPage:
+      description: Lista paginada
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/CatalogItemPageResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    LeaveStatusPage:
+      description: Lista paginada
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LeaveStatusPageResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    EmployeePage:
+      description: Lista paginada
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/EmployeePageResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    UserWithRelationsPage:
+      description: Lista paginada
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UserWithRelationsPageResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    LeavePage:
+      description: Lista paginada
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LeavePageResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    AuditRecordPage:
+      description: Lista paginada
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuditRecordPageResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    EmployeeHistory:
+      description: Colaborador e histórico paginado de seus afastamentos
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/EmployeeHistoryResponse'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    BadRequest:
+      description: Corpo JSON inválido
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    PayloadTooLarge:
+      description: Corpo JSON maior que 1 MiB
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    RateLimited:
+      description: Limite de tentativas de login ou callback excedido
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
+    InternalError:
+      description: Falha interna sem detalhes sensíveis
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+      headers:
+        X-Request-ID:
+          description: Identificador de correlação
+          schema: {type: string}
   schemas:
     Health:
       type: object
       required: [status]
-      properties: { status: { type: string }, service: { type: string }, database: { type: string } }
+      properties:
+        status: {type: string}
+        service: {type: string}
+        database: {type: string}
     ApiError:
       type: object
       required: [status, code, message, requestId]
       properties:
-        status: { type: integer }
-        code: { type: string }
-        message: { type: string }
-        requestId: { type: string }
+        status: {type: integer}
+        code: {type: string}
+        message: {type: string}
+        requestId: {type: string}
         fieldErrors:
           type: array
-          items: { type: object, required: [field, message], properties: { field: { type: string }, message: { type: string } } }
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: {type: string}
+              message: {type: string}
     PageMeta:
       type: object
       required: [page, perPage, total, totalPages]
-      properties: { page: { type: integer }, perPage: { type: integer }, total: { type: integer }, totalPages: { type: integer } }
-    ItemResponse: { type: object, required: [data], properties: { data: { type: object, additionalProperties: true } } }
-    ListResponse: { type: object, required: [data], properties: { data: { type: array, items: { type: object, additionalProperties: true } } } }
-    PaginatedResponse:
-      type: object
-      required: [data, meta]
-      properties: { data: { type: array, items: { type: object, additionalProperties: true } }, meta: { $ref: '#/components/schemas/PageMeta' } }
+      properties:
+        page: {type: integer, minimum: 1}
+        perPage:
+          type: integer
+          enum: [10, 20, 50, 100]
+        total: {type: integer, minimum: 0}
+        totalPages: {type: integer, minimum: 0}
     AuthMeResponse:
       type: object
       required: [data]
@@ -511,89 +1568,188 @@ components:
           type: object
           required: [user, roles, permissions]
           properties:
-            user: { type: object, required: [id, name, email], properties: { id: { type: string, format: uuid }, name: { type: string }, email: { type: string, format: email } } }
-            roles: { type: array, items: { type: string } }
-            permissions: { type: array, items: { type: string } }
+            user:
+              type: object
+              required: [id, name, email]
+              properties:
+                id: {type: string, format: uuid}
+                name: {type: string}
+                email: {type: string, format: email}
+            roles:
+              type: array
+              items: {type: string}
+            permissions:
+              type: array
+              items: {type: string}
     UserCreate:
       type: object
       required: [name, email]
       additionalProperties: false
-      properties: { name: { type: string, minLength: 2, maxLength: 200 }, email: { type: string, format: email }, isActive: { type: boolean, default: true } }
+      properties:
+        name: {type: string, minLength: 2, maxLength: 200}
+        email: {type: string, format: email, maxLength: 320}
+        isActive: {type: boolean, default: true}
     RoleWrite:
       type: object
       required: [code, name]
       additionalProperties: false
-      properties: { code: { type: string }, name: { type: string }, description: { type: string }, isActive: { type: boolean, default: true } }
+      properties:
+        code: {type: string, minLength: 2, maxLength: 100, pattern: '^[A-Za-z][A-Za-z0-9_-]*$'}
+        name: {type: string, minLength: 2, maxLength: 150}
+        description: {type: string, maxLength: 500}
+        isActive: {type: boolean, default: true}
     RoleUpdate:
       type: object
       minProperties: 1
       additionalProperties: false
-      properties: { name: { type: string }, description: { type: [string, 'null'] }, isActive: { type: boolean } }
-    CatalogWrite: { type: object, required: [nome], additionalProperties: false, properties: { nome: { type: string, minLength: 2, maxLength: 200 } } }
-    CatalogUpdate: { type: object, minProperties: 1, additionalProperties: false, properties: { nome: { type: string }, ativo: { type: boolean } } }
+      properties:
+        name: {type: string, minLength: 2, maxLength: 150}
+        description:
+          type: [string, 'null']
+          maxLength: 500
+        isActive: {type: boolean}
+    CatalogWrite:
+      type: object
+      required: [nome]
+      additionalProperties: false
+      properties:
+        nome: {type: string, minLength: 2, maxLength: 200}
+    CatalogUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        nome: {type: string, minLength: 2, maxLength: 200}
+        ativo: {type: boolean}
     LeaveStatusWrite:
       type: object
       required: [nome, classificacao]
       additionalProperties: false
-      properties: { nome: { type: string }, classificacao: { type: string, enum: [ATIVO, ENCERRADO, APOSENTADO] } }
+      properties:
+        nome: {type: string, minLength: 2, maxLength: 200}
+        classificacao:
+          type: string
+          enum: [ATIVO, ENCERRADO, APOSENTADO]
     LeaveStatusUpdate:
       type: object
       minProperties: 1
       additionalProperties: false
-      properties: { nome: { type: string }, ativo: { type: boolean }, classificacao: { type: string, enum: [ATIVO, ENCERRADO, APOSENTADO] } }
+      properties:
+        nome: {type: string, minLength: 2, maxLength: 200}
+        ativo: {type: boolean}
+        classificacao:
+          type: string
+          enum: [ATIVO, ENCERRADO, APOSENTADO]
     EmployeeWrite:
       type: object
       required: [codigoCorporativo, nome, obraId, funcaoId]
       additionalProperties: false
-      properties: { codigoCorporativo: { type: string }, nome: { type: string }, contato: { type: string }, obraId: { type: string, format: uuid }, funcaoId: { type: string, format: uuid } }
+      properties:
+        codigoCorporativo: {type: string, minLength: 1, maxLength: 100}
+        nome: {type: string, minLength: 2, maxLength: 200}
+        contato: {type: string, maxLength: 255}
+        obraId: {type: string, format: uuid}
+        funcaoId: {type: string, format: uuid}
     EmployeeUpdate:
       type: object
       minProperties: 1
       additionalProperties: false
-      properties: { nome: { type: string }, contato: { type: [string, 'null'] }, obraId: { type: string, format: uuid }, funcaoId: { type: string, format: uuid } }
+      properties:
+        nome: {type: string, minLength: 2, maxLength: 200}
+        contato:
+          type: [string, 'null']
+          maxLength: 255
+        obraId: {type: string, format: uuid}
+        funcaoId: {type: string, format: uuid}
     LeaveWrite:
       type: object
       required: [colaboradorId, obraId, funcaoId, situacaoId, dataAfastamento]
       additionalProperties: false
       properties:
-        colaboradorId: { type: string, format: uuid }
-        obraId: { type: string, format: uuid }
-        funcaoId: { type: string, format: uuid }
-        situacaoId: { type: string, format: uuid }
-        tipoBeneficioId: { type: [string, 'null'], format: uuid }
-        dataAfastamento: { type: string, format: date }
-        dataFimBeneficio: { type: [string, 'null'], format: date }
-        dataRetornoPrevista: { type: [string, 'null'], format: date }
-        dataRetornoEfetiva: { type: [string, 'null'], format: date }
-        causaCid: { type: [string, 'null'] }
-        observacoes: { type: [string, 'null'] }
+        colaboradorId: {type: string, format: uuid}
+        obraId: {type: string, format: uuid}
+        funcaoId: {type: string, format: uuid}
+        situacaoId: {type: string, format: uuid}
+        tipoBeneficioId:
+          type: [string, 'null']
+          format: uuid
+        dataAfastamento: {type: string, format: date}
+        dataFimBeneficio:
+          type: [string, 'null']
+          format: date
+        dataRetornoPrevista:
+          type: [string, 'null']
+          format: date
+        dataRetornoEfetiva:
+          type: [string, 'null']
+          format: date
+        causaCid:
+          type: [string, 'null']
+          maxLength: 500
+        observacoes:
+          type: [string, 'null']
+          maxLength: 10000
     LeaveUpdate:
       type: object
       minProperties: 1
       additionalProperties: false
       properties:
-        colaboradorId: { type: string, format: uuid }
-        obraId: { type: string, format: uuid }
-        funcaoId: { type: string, format: uuid }
-        situacaoId: { type: string, format: uuid }
-        tipoBeneficioId: { type: [string, 'null'], format: uuid }
-        dataAfastamento: { type: string, format: date }
-        dataFimBeneficio: { type: [string, 'null'], format: date }
-        dataRetornoPrevista: { type: [string, 'null'], format: date }
-        dataRetornoEfetiva: { type: [string, 'null'], format: date }
-        causaCid: { type: [string, 'null'] }
-        observacoes: { type: [string, 'null'] }
+        colaboradorId: {type: string, format: uuid}
+        obraId: {type: string, format: uuid}
+        funcaoId: {type: string, format: uuid}
+        situacaoId: {type: string, format: uuid}
+        tipoBeneficioId:
+          type: [string, 'null']
+          format: uuid
+        dataAfastamento: {type: string, format: date}
+        dataFimBeneficio:
+          type: [string, 'null']
+          format: date
+        dataRetornoPrevista:
+          type: [string, 'null']
+          format: date
+        dataRetornoEfetiva:
+          type: [string, 'null']
+          format: date
+        causaCid:
+          type: [string, 'null']
+          maxLength: 500
+        observacoes:
+          type: [string, 'null']
+          maxLength: 10000
     ProgressWrite:
       type: object
       required: [tipoAndamentoId, dataAndamento, descricao]
       additionalProperties: false
-      properties: { tipoAndamentoId: { type: string, format: uuid }, dataAndamento: { type: string, format: date }, descricao: { type: string }, proximaAcao: { type: [string, 'null'] }, dataProximaAcao: { type: [string, 'null'], format: date } }
+      properties:
+        tipoAndamentoId: {type: string, format: uuid}
+        dataAndamento: {type: string, format: date}
+        descricao: {type: string, minLength: 1, maxLength: 10000}
+        proximaAcao:
+          type: [string, 'null']
+          maxLength: 5000
+        dataProximaAcao:
+          type: [string, 'null']
+          format: date
     ProgressUpdate:
       type: object
       minProperties: 1
       additionalProperties: false
-      properties: { tipoAndamentoId: { type: string, format: uuid }, dataAndamento: { type: string, format: date }, descricao: { type: string }, proximaAcao: { type: [string, 'null'] }, dataProximaAcao: { type: [string, 'null'], format: date } }
-    DeleteReason: { type: object, additionalProperties: false, properties: { reason: { type: string, minLength: 2, maxLength: 500 } } }
+      properties:
+        tipoAndamentoId: {type: string, format: uuid}
+        dataAndamento: {type: string, format: date}
+        descricao: {type: string, minLength: 1, maxLength: 10000}
+        proximaAcao:
+          type: [string, 'null']
+          maxLength: 5000
+        dataProximaAcao:
+          type: [string, 'null']
+          format: date
+    DeleteReason:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: string, minLength: 2, maxLength: 500}
     NotificationList:
       type: object
       required: [data, meta]
@@ -602,18 +1758,31 @@ components:
           type: array
           items:
             type: object
-            required: [id, type, title, message, isOverdue, isRead, dueDate, context]
+            required: [id, type, title, message, isOverdue, isRead, dueDate, context, readAt]
             properties:
-              id: { type: string }
-              type: { type: string }
-              title: { type: string }
-              message: { type: string }
-              isOverdue: { type: boolean }
-              isRead: { type: boolean }
-              readAt: { type: [string, 'null'], format: date-time }
-              dueDate: { type: string, format: date }
-              context: { type: object, required: [afastamentoId, colaboradorId], properties: { afastamentoId: { type: string, format: uuid }, colaboradorId: { type: string, format: uuid } } }
-        meta: { type: object, required: [unreadCount], properties: { unreadCount: { type: integer } } }
+              id: {type: string}
+              type:
+                type: string
+                enum: [BENEFICIO_VENCIDO, BENEFICIO_A_VENCER, RETORNO_VENCIDO, RETORNO_PREVISTO, PROXIMA_ACAO_VENCIDA, PROXIMA_ACAO]
+              title: {type: string}
+              message: {type: string}
+              isOverdue: {type: boolean}
+              isRead: {type: boolean}
+              readAt:
+                type: [string, 'null']
+                format: date-time
+              dueDate: {type: string, format: date}
+              context:
+                type: object
+                required: [afastamentoId, colaboradorId]
+                properties:
+                  afastamentoId: {type: string, format: uuid}
+                  colaboradorId: {type: string, format: uuid}
+        meta:
+          type: object
+          required: [unreadCount]
+          properties:
+            unreadCount: {type: integer, minimum: 0}
     DashboardResponse:
       type: object
       required: [data]
@@ -626,10 +1795,476 @@ components:
               type: object
               required: [activeLeaves, expiredBenefits, expectedReturnsNext15Days]
               properties:
-                activeLeaves: { type: integer }
-                expiredBenefits: { type: integer }
-                expectedReturnsNext15Days: { type: integer }
-            activeByObra: { type: array, items: { type: object } }
-            newLeavesByMonth: { type: array, items: { type: object } }
-            duration: { type: object, required: [status, series], properties: { status: { const: pending_final_validation }, series: { type: array, maxItems: 0 } } }
-            priorities: { type: array, items: { type: object } }
+                activeLeaves: {type: integer, minimum: 0}
+                expiredBenefits: {type: integer, minimum: 0}
+                expectedReturnsNext15Days: {type: integer, minimum: 0}
+            activeByObra:
+              type: array
+              items:
+                type: object
+                required: [obraId, obraNome, total]
+                properties:
+                  obraId: {type: string, format: uuid}
+                  obraNome: {type: string}
+                  total: {type: integer, minimum: 0}
+            newLeavesByMonth:
+              type: array
+              items:
+                type: object
+                required: [month, total]
+                properties:
+                  month: {type: string, pattern: '^[0-9]{4}-[0-9]{2}$'}
+                  total: {type: integer, minimum: 0}
+            duration:
+              type: object
+              required: [status, series]
+              properties:
+                status: {const: pending_final_validation}
+                series: {type: array, maxItems: 0}
+            priorities:
+              type: array
+              items:
+                type: object
+                required: [type, dueDate, isOverdue, afastamentoId, colaboradorId, colaboradorNome]
+                properties:
+                  type:
+                    type: string
+                    enum: [BENEFICIO, RETORNO]
+                  dueDate: {type: string, format: date}
+                  isOverdue: {type: boolean}
+                  afastamentoId: {type: string, format: uuid}
+                  colaboradorId: {type: string, format: uuid}
+                  colaboradorNome: {type: string}
+    ActorSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+    EmployeeIdentity:
+      type: object
+      required: [id, codigoCorporativo, nome]
+      properties:
+        id: {type: string, format: uuid}
+        codigoCorporativo: {type: string}
+        nome: {type: string}
+    CatalogItem:
+      type: object
+      required: [id, nome, ativo, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        nome: {type: string}
+        ativo: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    LeaveStatus:
+      allOf:
+      - {$ref: '#/components/schemas/CatalogItem'}
+      - type: object
+        required: [classificacao]
+        properties:
+          classificacao:
+            type: string
+            enum: [ATIVO, ENCERRADO, APOSENTADO]
+    Employee:
+      type: object
+      required: [id, codigoCorporativo, nome, contato, obraId, funcaoId, ativo, sourceSystem, createdAt, updatedAt, obra, funcao]
+      properties:
+        id: {type: string, format: uuid}
+        codigoCorporativo: {type: string}
+        nome: {type: string}
+        contato:
+          type: [string, 'null']
+        obraId: {type: string, format: uuid}
+        funcaoId: {type: string, format: uuid}
+        ativo: {type: boolean}
+        sourceSystem: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        obra: {$ref: '#/components/schemas/CatalogItem'}
+        funcao: {$ref: '#/components/schemas/CatalogItem'}
+    Permission:
+      type: object
+      required: [id, code, description, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        description:
+          type: [string, 'null']
+        createdAt: {type: string, format: date-time}
+    RoleSummary:
+      type: object
+      required: [id, code, name, isActive]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        isActive: {type: boolean}
+    Role:
+      type: object
+      required: [id, code, name, description, isActive, createdAt, updatedAt, permissions, _count]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        description:
+          type: [string, 'null']
+        isActive: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [roleId, permissionId, createdAt, permission]
+            properties:
+              roleId: {type: string, format: uuid}
+              permissionId: {type: string, format: uuid}
+              createdAt: {type: string, format: date-time}
+              permission: {$ref: '#/components/schemas/Permission'}
+        _count:
+          type: object
+          required: [users]
+          properties:
+            users: {type: integer, minimum: 0}
+    User:
+      type: object
+      required: [id, name, email, isActive, lastLoginAt, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        email: {type: string, format: email}
+        isActive: {type: boolean}
+        lastLoginAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    UserWithRelations:
+      allOf:
+      - {$ref: '#/components/schemas/User'}
+      - type: object
+        required: [roles, externalIdentities]
+        properties:
+          roles:
+            type: array
+            items:
+              type: object
+              required: [userId, roleId, assignedById, createdAt, role]
+              properties:
+                userId: {type: string, format: uuid}
+                roleId: {type: string, format: uuid}
+                assignedById:
+                  type: [string, 'null']
+                  format: uuid
+                createdAt: {type: string, format: date-time}
+                role: {$ref: '#/components/schemas/RoleSummary'}
+          externalIdentities:
+            type: array
+            items:
+              type: object
+              required: [provider, providerTenantId, linkedAt, lastLoginAt]
+              properties:
+                provider: {const: MICROSOFT}
+                providerTenantId: {type: string}
+                linkedAt: {type: string, format: date-time}
+                lastLoginAt:
+                  type: [string, 'null']
+                  format: date-time
+    LeaveSnapshot:
+      type: object
+      required: [id, colaboradorId, obraId, funcaoId, situacaoId, tipoBeneficioId, dataAfastamento, dataFimBeneficio, dataRetornoPrevista, dataRetornoEfetiva,
+        causaCid, observacoes, createdById, updatedById, createdAt, updatedAt, obra, funcao, situacao, tipoBeneficio]
+      properties:
+        id: {type: string, format: uuid}
+        colaboradorId: {type: string, format: uuid}
+        obraId: {type: string, format: uuid}
+        funcaoId: {type: string, format: uuid}
+        situacaoId: {type: string, format: uuid}
+        tipoBeneficioId:
+          type: [string, 'null']
+          format: uuid
+        dataAfastamento: {type: string, format: date}
+        dataFimBeneficio:
+          type: [string, 'null']
+          format: date
+        dataRetornoPrevista:
+          type: [string, 'null']
+          format: date
+        dataRetornoEfetiva:
+          type: [string, 'null']
+          format: date
+        causaCid:
+          type: [string, 'null']
+        observacoes:
+          type: [string, 'null']
+        createdById: {type: string, format: uuid}
+        updatedById:
+          type: [string, 'null']
+          format: uuid
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        obra: {$ref: '#/components/schemas/CatalogItem'}
+        funcao: {$ref: '#/components/schemas/CatalogItem'}
+        situacao: {$ref: '#/components/schemas/LeaveStatus'}
+        tipoBeneficio:
+          anyOf:
+          - {$ref: '#/components/schemas/CatalogItem'}
+          - {type: 'null'}
+    Leave:
+      allOf:
+      - {$ref: '#/components/schemas/LeaveSnapshot'}
+      - type: object
+        required: [colaborador, createdBy, updatedBy]
+        properties:
+          colaborador:
+            allOf:
+            - {$ref: '#/components/schemas/EmployeeIdentity'}
+            - type: object
+              required: [ativo]
+              properties:
+                ativo: {type: boolean}
+          createdBy: {$ref: '#/components/schemas/ActorSummary'}
+          updatedBy:
+            anyOf:
+            - {$ref: '#/components/schemas/ActorSummary'}
+            - {type: 'null'}
+    EmployeeHistoryResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [colaborador, afastamentos]
+          properties:
+            colaborador: {$ref: '#/components/schemas/EmployeeIdentity'}
+            afastamentos:
+              type: array
+              items: {$ref: '#/components/schemas/LeaveSnapshot'}
+        meta: {$ref: '#/components/schemas/PageMeta'}
+    Progress:
+      type: object
+      required: [id, afastamentoId, tipoAndamentoId, dataAndamento, descricao, proximaAcao, dataProximaAcao, createdById, updatedById, deletedAt,
+        deletedById, deleteReason, createdAt, updatedAt, tipoAndamento, createdBy, updatedBy]
+      properties:
+        id: {type: string, format: uuid}
+        afastamentoId: {type: string, format: uuid}
+        tipoAndamentoId: {type: string, format: uuid}
+        dataAndamento: {type: string, format: date}
+        descricao: {type: string}
+        proximaAcao:
+          type: [string, 'null']
+        dataProximaAcao:
+          type: [string, 'null']
+          format: date
+        createdById: {type: string, format: uuid}
+        updatedById:
+          type: [string, 'null']
+          format: uuid
+        deletedAt:
+          type: [string, 'null']
+          format: date-time
+        deletedById:
+          type: [string, 'null']
+          format: uuid
+        deleteReason:
+          type: [string, 'null']
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        tipoAndamento: {$ref: '#/components/schemas/CatalogItem'}
+        createdBy: {$ref: '#/components/schemas/ActorSummary'}
+        updatedBy:
+          anyOf:
+          - {$ref: '#/components/schemas/ActorSummary'}
+          - {type: 'null'}
+    Document:
+      type: object
+      required: [id, afastamentoId, andamentoId, tipoDocumentoId, originalName, mimeType, sizeBytes, sha256, uploadedById, deletedAt, deletedById,
+        deleteReason, createdAt, tipoDocumento, uploadedBy]
+      properties:
+        id: {type: string, format: uuid}
+        afastamentoId: {type: string, format: uuid}
+        andamentoId:
+          type: [string, 'null']
+          format: uuid
+        tipoDocumentoId: {type: string, format: uuid}
+        originalName: {type: string}
+        mimeType: {type: string}
+        sizeBytes: {type: integer, minimum: 0}
+        sha256:
+          type: [string, 'null']
+          pattern: ^[a-f0-9]{64}$
+        uploadedById: {type: string, format: uuid}
+        deletedAt:
+          type: [string, 'null']
+          format: date-time
+        deletedById:
+          type: [string, 'null']
+          format: uuid
+        deleteReason:
+          type: [string, 'null']
+        createdAt: {type: string, format: date-time}
+        tipoDocumento: {$ref: '#/components/schemas/CatalogItem'}
+        uploadedBy: {$ref: '#/components/schemas/ActorSummary'}
+      description: Metadados acessíveis apenas com capability. storageKey e caminho físico nunca são expostos.
+    AuditRecord:
+      type: object
+      required: [id, actorUserId, action, entityType, entityId, metadata, requestId, createdAt, actor]
+      properties:
+        id: {type: string, format: uuid}
+        actorUserId:
+          type: [string, 'null']
+          format: uuid
+        action: {type: string}
+        entityType: {type: string}
+        entityId:
+          type: [string, 'null']
+          format: uuid
+        metadata:
+          type: [object, 'null']
+          additionalProperties: true
+        requestId:
+          type: [string, 'null']
+        createdAt: {type: string, format: date-time}
+        actor:
+          anyOf:
+          - type: object
+            required: [id, name, email]
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+              email: {type: string, format: email}
+          - {type: 'null'}
+    NotificationRead:
+      type: object
+      required: [id, isRead, readAt]
+      properties:
+        id: {type: string, pattern: '^alert_[A-Za-z0-9_-]+$'}
+        isRead: {const: true}
+        readAt: {type: string, format: date-time}
+    CatalogItemResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/CatalogItem'}
+    LeaveStatusResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/LeaveStatus'}
+    EmployeeResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Employee'}
+    UserResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/User'}
+    UserWithRelationsResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/UserWithRelations'}
+    RoleResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Role'}
+    LeaveResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Leave'}
+    ProgressResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Progress'}
+    DocumentResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Document'}
+    NotificationReadResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/NotificationRead'}
+    RoleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/Role'}
+    PermissionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/Permission'}
+    ProgressListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/Progress'}
+    DocumentListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/Document'}
+    CatalogItemPageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogItem'}
+        meta: {$ref: '#/components/schemas/PageMeta'}
+    LeaveStatusPageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/LeaveStatus'}
+        meta: {$ref: '#/components/schemas/PageMeta'}
+    EmployeePageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/Employee'}
+        meta: {$ref: '#/components/schemas/PageMeta'}
+    UserWithRelationsPageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/UserWithRelations'}
+        meta: {$ref: '#/components/schemas/PageMeta'}
+    LeavePageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/Leave'}
+        meta: {$ref: '#/components/schemas/PageMeta'}
+    AuditRecordPageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/AuditRecord'}
+        meta: {$ref: '#/components/schemas/PageMeta'}

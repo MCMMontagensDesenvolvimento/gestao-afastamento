@@ -15,11 +15,19 @@ export const authService = {
 };
 
 export function safeReturnTo(value: unknown): string {
-  return typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith("//") &&
-    !value.includes("\\") &&
-    !value.startsWith("/login")
-    ? value
-    : "/";
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })
+  )
+    return "/";
+
+  const target = new URL(value, window.location.origin);
+  if (target.origin !== window.location.origin || target.pathname.startsWith("/login")) return "/";
+  return `${target.pathname}${target.search}${target.hash}`;
 }

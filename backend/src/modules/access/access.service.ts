@@ -16,20 +16,20 @@ export class AccessService {
   }
   async updateRole(id: string, input: { name?: string | undefined; description?: string | null | undefined; isActive?: boolean | undefined }, actor: string, requestId: string) {
     const role = await this.requireRole(id);
-    if (input.isActive === false && await this.repository.roleHasPermission(id, "permissions.manage") && !(await this.repository.activeUserHasOtherPermission(id, "permissions.manage"))) {
+    const updated = await this.repository.updateRole(id, input);
+    if (!updated.changed) {
       throw new AppError(409, "LAST_ADMINISTRATIVE_ROLE_REQUIRED", "Não é possível inativar o único papel com capacidade administrativa.");
     }
-    const updated = await this.repository.updateRole(id, input);
     await this.audit.record({ actorUserId: actor, action: "role.update", entityType: "Role", entityId: id, requestId, metadata: { code: role.code, fields: Object.keys(input) } });
-    return { data: updated };
+    return { data: updated.value };
   }
   async replacePermissions(id: string, permissionIds: string[], actor: string, requestId: string) {
     await this.requireRole(id);
-    const losesAdmin = await this.repository.roleHasPermission(id, "permissions.manage") && !(await this.repository.permissionsInclude(permissionIds, "permissions.manage"));
-    if (losesAdmin && !(await this.repository.activeUserHasOtherPermission(id, "permissions.manage"))) {
+    const result = await this.repository.replacePermissions(id, permissionIds);
+    if (!result.changed) {
       throw new AppError(409, "LAST_ADMINISTRATIVE_ROLE_REQUIRED", "Não é possível remover a única capacidade administrativa existente.");
     }
-    const role = await this.repository.replacePermissions(id, permissionIds);
+    const role = result.value;
     if (!role) throw new AppError(422, "INVALID_PERMISSION", "Uma ou mais permissões não existem.");
     await this.audit.record({ actorUserId: actor, action: "role.permissions.replace", entityType: "Role", entityId: id, requestId, metadata: { permissionIds } });
     return { data: role };

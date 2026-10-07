@@ -267,6 +267,7 @@ export function AcoesLinha({
   acoes: AcaoLinha[];
   compacto?: boolean;
 }) {
+  if (acoes.length === 0) return null;
   return (
     <>
       <div className={cn("hidden justify-end gap-1", !compacto && "lg:flex")}>
@@ -355,6 +356,7 @@ export function Paginacao({
           </label>
         ) : null}
         <Button
+          type="button"
           variant="outline"
           size="sm"
           onClick={() => setPagina(pagina - 1)}
@@ -367,6 +369,7 @@ export function Paginacao({
           {pagina} / {totalPaginas}
         </span>
         <Button
+          type="button"
           variant="outline"
           size="sm"
           onClick={() => setPagina(pagina + 1)}

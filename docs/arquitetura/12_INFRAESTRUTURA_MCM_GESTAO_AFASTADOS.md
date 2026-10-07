@@ -1,9 +1,9 @@
 # 12 — Infraestrutura — MCM Gestão de Afastados
 
-**Versão:** 1.0  
-**Data:** 05/10/2026  
-**Status:** Blueprint definido — implementação pendente  
-**Produto:** MCM Gestão de Afastados  
+**Versão:** 1.1
+**Data:** 06/10/2026
+**Status:** Docker local implementado; ambiente corporativo de produção pendente
+**Produto:** MCM Gestão de Afastados
 **Branch de consolidação:** `arquitetura/base-integrada`
 
 ---
@@ -12,7 +12,7 @@
 
 Definir a infraestrutura necessária para executar a MCM Gestão de Afastados de forma reproduzível em desenvolvimento, homologação e produção.
 
-O objetivo imediato é transformar os arquivos de infraestrutura atualmente vazios ou de placeholder em uma base funcional depois que Backend, API e Banco forem detalhados.
+A base possui Dockerfiles, Compose, envs de exemplo e healthchecks funcionais. Este documento distingue a implementação local das decisões operacionais ainda necessárias para homologação e produção.
 
 A infraestrutura será portável e não ficará presa a um único provedor.
 
@@ -33,20 +33,18 @@ docker-compose.prod.yml
 
 Também existem Dockerfiles, `.dockerignore` e `.env.example` por camada.
 
-Entretanto, nesta baseline vários desses arquivos são apenas placeholders e não configuram um ambiente executável.
+O Compose de desenvolvimento executa frontend Vite em 5173, backend Express em
+3000 e PostgreSQL 16 em 5432, com volumes persistentes e storage privado local.
+Os três serviços foram observados em estado `healthy` na auditoria local.
 
-### Classificação atual
+A produção possui imagens e configuração portáveis: frontend estático Nginx com
+fallback SPA e proxy da API; backend e banco internos. Host, domínio, HTTPS,
+secrets corporativos e storage definitivo continuam pendentes. Não houve deploy.
 
-**Abaixo do Nível 1 operacional.**
-
-A árvore de arquivos existe, mas ainda não há:
-
-- backend executável;
-- banco configurado;
-- compose funcional;
-- envs documentados;
-- healthchecks funcionais;
-- estratégia de storage implementada.
+A homologação autenticada depende da App Registration Microsoft. Consulte o
+[setup local](../runbooks/setup-local.md), o
+[handoff](../handoff/HANDOFF_MILENA.md) e as
+[pendências](../handoff/PENDENCIAS_HANDOFF.md).
 
 ---
 
@@ -78,7 +76,7 @@ infrastructure_blueprint:
       public_in_production: true
     backend:
       local_port: 3000
-      public_in_production: true
+      public_in_production: false
     db:
       local_port: 5432
       public_in_production: false
@@ -297,7 +295,7 @@ services:
       - db_data:/var/lib/postgresql/data
 ```
 
-O arquivo real deverá incluir:
+O `docker-compose.dev.yml` implementado inclui:
 
 - volumes de source/hot reload quando adequados;
 - healthchecks;
@@ -354,7 +352,7 @@ stage build: Node.js
 → npm ci
 → npm run build
 
-stage runtime: servidor web estático
+stage runtime: Nginx estático
 → copiar dist
 → configurar fallback SPA
 → servir /health.html
@@ -384,9 +382,7 @@ Migrations não devem rodar implicitamente a cada inicialização do container.
 
 ## 9. `.gitignore` raiz
 
-O `.gitignore` atual deverá ser substituído por um arquivo real.
-
-Conteúdo mínimo esperado:
+O `.gitignore` raiz está implementado e protege envs, dependências, builds, caches, logs, uploads, dumps e backups. O bloco abaixo resume a política; o arquivo versionado é a referência efetiva:
 
 ```gitignore
 # Environment
@@ -494,14 +490,11 @@ O `.env` real não é versionado.
 
 ## 13. Variáveis frontend
 
-`frontend/.env.example` inicial:
+`frontend/.env.example` implementado:
 
 ```env
 VITE_API_BASE_URL=http://localhost:3000/api/v1
 VITE_APP_NAME=MCM Gestão de Afastados
-VITE_APP_ENV=local
-VITE_DEFAULT_LOCALE=pt-BR
-VITE_USE_MOCKS=false
 ```
 
 Não colocar:
@@ -516,7 +509,7 @@ Não colocar:
 
 ## 14. Variáveis backend
 
-`backend/.env.example` inicial:
+Exemplo de responsabilidades das variáveis backend (para copiar, use o [`backend/.env.example`](../../backend/.env.example) versionado):
 
 ```env
 NODE_ENV=development
@@ -555,7 +548,7 @@ S3_FORCE_PATH_STYLE=false
 MAX_UPLOAD_BYTES=10485760
 ```
 
-Os nomes podem ser refinados na implementação, mas a separação de responsabilidade deve permanecer.
+A lista efetiva e os valores locais estão no arquivo versionado e no [setup local](../runbooks/setup-local.md). Dentro do Compose, o host PostgreSQL é `db`; fora dele, use a conexão local documentada.
 
 ---
 
@@ -634,7 +627,7 @@ uploads_data
 ### Produção
 
 - DB persistente;
-- se `STORAGE_DRIVER=s3`, sem volume de upload;
+- a configuração atual mantém `uploads_data` para o driver local; adequar volumes quando um adapter S3 real for aprovado e implementado;
 - se storage local for aprovado, volume persistente separado e incluído em backup.
 
 Nunca armazenar documentos dentro da imagem do container.
@@ -667,7 +660,7 @@ Requisitos:
 - credenciais somente no backend;
 - backup/versionamento conforme provider e política aprovada.
 
-O provider real continua pendente.
+O provider e o adapter S3 reais continuam pendentes. Hoje, `STORAGE_DRIVER=s3` interrompe a inicialização com `S3_STORAGE_NOT_CONFIGURED`; não é um modo operacional disponível. O único adapter implementado é o local privado.
 
 ---
 
@@ -803,13 +796,15 @@ Secrets nunca entram em:
 
 ### Desenvolvimento
 
-Dentro do backend/container:
+Para subir a base existente, dentro do backend/container:
 
 ```bash
 npx prisma generate
-npx prisma migrate dev
+npx prisma migrate deploy
 npx prisma db seed
 ```
+
+Usar `npx prisma migrate dev --name descricao` apenas para uma nova alteração de schema em desenvolvimento. Não recriar migrations aplicadas.
 
 ### Produção
 
@@ -830,13 +825,13 @@ npx prisma migrate deploy
 
 ## 24. Seeds
 
-Seeds previstos:
+Seed implementada:
 
-- permissões base;
-- roles base quando aprovadas;
-- catálogos mínimos quando fizer sentido;
-- dados de desenvolvimento fictícios;
-- primeiro administrador somente por configuração explícita.
+- 20 permissões base;
+- papel `ADMIN` e associação às permissões;
+- primeiro administrador somente por `BOOTSTRAP_ADMIN_EMAIL` explícito.
+
+Não há seed demo, perfil SMS nem catálogos operacionais sem lista aprovada. A execução repetida foi validada sem duplicação.
 
 Não criar usuário administrador hardcoded.
 
@@ -1029,12 +1024,12 @@ gestao-afastados/
 
 | Necessidade | Serviço/infra | Situação |
 |---|---|---|
-| React/Vite SPA | frontend | definida |
-| API Express | backend | definida |
-| PostgreSQL | db | definida |
-| Microsoft OIDC | provider externo + backend | definida em alto nível |
-| Sessões | PostgreSQL | definida |
-| Documentos dev | volume backend | definida |
+| React/Vite SPA | frontend | implementada |
+| API Express | backend | implementada |
+| PostgreSQL | db | implementado |
+| Microsoft OIDC | provider externo + backend | código implementado; App Registration pendente |
+| Sessões | PostgreSQL | implementadas |
+| Documentos dev | volume backend | implementado |
 | Documentos prod | S3-compatible | provider pendente |
 | Redis | nenhum | não necessário |
 | Worker | nenhum | não necessário |
@@ -1049,33 +1044,14 @@ gestao-afastados/
 
 ## 34. Maturidade
 
-### Atual
+A base Docker local está implementada com frontend, backend e banco, envs,
+volumes, healthchecks e setup reproduzível. Os três serviços foram observados
+como `healthy` na auditoria.
 
-**Pré-Nível 1 operacional** — existem apenas placeholders de infraestrutura.
-
-### Meta durante construção da base
-
-**Nível 2 — Docker Compose dev completo.**
-
-Critérios:
-
-- frontend;
-- backend;
-- db;
-- envs;
-- volumes;
-- healthchecks;
-- setup local reproduzível.
-
-### Meta para homologação
-
-**Nível 3.**
-
-### Meta para produção
-
-**Nível 4 no mínimo.**
-
-Produção não deve ser considerada pronta apenas porque os containers sobem.
+Os artefatos de produção existem, mas isso não homologa um ambiente corporativo.
+App Registration, domínios/HTTPS, operação de secrets, storage definitivo e
+exercícios de recuperação ainda dependem da MCM. Não houve deploy nem smoke
+autenticado completo. Ver [pendências do handoff](../handoff/PENDENCIAS_HANDOFF.md).
 
 ---
 
@@ -1112,37 +1088,39 @@ Ownership:
 
 ## 36. Critérios de aceite da implementação
 
-- [ ] `.gitignore` real;
-- [ ] frontend usa npm + package-lock;
-- [ ] backend usa npm + package-lock;
-- [ ] lockfiles alternativos removidos;
-- [ ] frontend Dockerfile dev;
-- [ ] frontend Dockerfile prod;
-- [ ] backend Dockerfile dev;
-- [ ] backend Dockerfile prod;
-- [ ] `.dockerignore` de frontend;
-- [ ] `.dockerignore` de backend;
-- [ ] `.env.example` raiz;
-- [ ] `.env.example` frontend;
-- [ ] `.env.example` backend;
-- [ ] compose dev funcional;
-- [ ] compose prod válido;
-- [ ] `COMPOSE_PROJECT_NAME=gestao-afastados`;
-- [ ] ausência de `container_name`;
-- [ ] frontend em 5173 local;
-- [ ] backend em 3000 local;
-- [ ] db em 5432 apenas local;
-- [ ] DATABASE_URL usa host `db` dentro do Compose;
-- [ ] volume `db_data`;
-- [ ] storage local em volume;
-- [ ] health frontend;
-- [ ] health backend;
-- [ ] health DB;
-- [ ] banco privado em produção;
-- [ ] secrets não versionados;
-- [ ] migrations controladas;
-- [ ] backup documentado;
-- [ ] restore documentado;
-- [ ] rollback documentado;
+- [x] `.gitignore` real;
+- [x] frontend usa npm + package-lock;
+- [x] backend usa npm + package-lock;
+- [x] lockfiles alternativos removidos;
+- [x] frontend Dockerfile dev;
+- [x] frontend Dockerfile prod;
+- [x] backend Dockerfile dev;
+- [x] backend Dockerfile prod;
+- [x] `.dockerignore` de frontend;
+- [x] `.dockerignore` de backend;
+- [x] `.env.example` raiz;
+- [x] `.env.example` frontend;
+- [x] `.env.example` backend;
+- [x] compose dev funcional;
+- [x] Compose de produção versionado com backend/DB internos; validação operacional depende do ambiente real;
+- [x] `COMPOSE_PROJECT_NAME=gestao-afastados`;
+- [x] ausência de `container_name`;
+- [x] frontend em 5173 local;
+- [x] backend em 3000 local;
+- [x] porta 5432 publicada apenas no Compose de desenvolvimento;
+- [x] DATABASE_URL usa host `db` dentro do Compose;
+- [x] volume `db_data`;
+- [x] storage local em volume;
+- [x] health frontend;
+- [x] health backend;
+- [x] health DB;
+- [x] banco privado em produção;
+- [x] secrets não versionados;
+- [x] migrations controladas;
+- [x] backup documentado;
+- [x] diretrizes de restore documentadas;
+- [ ] exercício de restore executado em ambiente corporativo;
+- [x] rollback documentado;
 - [ ] provider de produção definido antes do go-live;
-- [ ] provider de storage definido antes do go-live.
+- [ ] provider de storage definido antes do go-live;
+- [ ] homologação autenticada com App Registration Microsoft real.

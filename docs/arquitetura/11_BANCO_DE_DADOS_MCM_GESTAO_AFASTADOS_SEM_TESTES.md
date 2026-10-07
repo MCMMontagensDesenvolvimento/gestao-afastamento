@@ -1,16 +1,16 @@
 # 11 — Banco de Dados — MCM Gestão de Afastados
 
-**Versão:** 1.0  
-**Data:** 05/10/2026  
-**Status:** Modelo planejado e pronto para implementação  
-**Maturidade:** Nível 3 — schema/migrations planejados  
+**Versão:** 1.1
+**Data:** 06/10/2026
+**Status:** Schema, migrations e seed implementados e auditados
+**Maturidade:** Banco local validado; homologação autenticada e operação de produção pendentes
 **Stack:** PostgreSQL + Prisma
 
 ---
 
 ## 1. Objetivo
 
-Definir o modelo de persistência real da MCM Gestão de Afastados, substituindo a persistência temporária do protótipo por um banco PostgreSQL governado pelo backend.
+Documentar o modelo PostgreSQL/Prisma implementado e governado pelo backend da MCM Gestão de Afastados.
 
 O banco deve proteger:
 
@@ -66,7 +66,7 @@ database_blueprint:
 
   seeds:
     base: true
-    demo: "dev only"
+    demo: false
     test: false
 
   performance:
@@ -587,7 +587,7 @@ Obrigatórias:
 
 Criar unique exato em `nome`.
 
-A prevenção de duplicidade case-insensitive será feita por normalização de entrada no service. Caso os dados corporativos exijam equivalência case-insensitive forte no banco, criar índice funcional em migration revisada.
+O service remove espaços nas extremidades; a unicidade atual do nome é exata. Se a MCM exigir equivalência sem distinção de maiúsculas/minúsculas, essa alteração deve ser revisada e aplicada por nova migration.
 
 ---
 
@@ -875,19 +875,19 @@ audit.read
 
 Não hardcodar a matriz antes da confirmação final.
 
-Pode ser criado pelo admin após bootstrap ou adicionado em migration/seed futura quando aprovado.
+A seed não cria `SMS`, e a API bloqueia sua criação enquanto a definição formal estiver pendente. A implementação dessa matriz depende de aprovação da MCM.
 
 ### Dev/demo
 
-Dados estritamente fictícios e separados da seed base.
+Não há seed demo implementada. A seed base não cria dados operacionais nem usuários sem `BOOTSTRAP_ADMIN_EMAIL`.
 
 ---
 
-## 26. Plano de migrations
+## 26. Migrations implementadas
 
-### Migration 001 — foundation_auth
+### `202610060001_foundation_auth`
 
-Criar:
+Contém:
 
 - users;
 - external_identities;
@@ -897,9 +897,9 @@ Criar:
 - user_roles;
 - role_permissions.
 
-### Migration 002 — catalogs
+### `202610060002_catalogs`
 
-Criar:
+Contém:
 
 - obras;
 - funcoes;
@@ -908,52 +908,48 @@ Criar:
 - tipos_andamento_afastamento;
 - tipos_documento_afastamento.
 
-### Migration 003 — core_domain
+### `202610060003_core_domain`
 
-Criar:
+Contém:
 
 - colaboradores;
 - afastamentos;
 - afastamento_andamentos;
 - afastamento_documentos.
 
-### Migration 004 — operational_state
+### `202610060004_operational_state`
 
-Criar:
+Contém:
 
 - notification_reads;
 - audit_logs;
 - índices compostos iniciais.
 
-### Migration 005+ — evolution
+### Evolução
 
-Somente após necessidade real.
+As quatro migrations estão versionadas e aplicadas no ambiente local, sem drift. Novas alterações exigem nova migration revisada; não modificar nem recriar migrations já aplicadas.
 
 ---
 
-## 27. Estratégia de migração da persistência do protótipo
+## 27. Continuidade do schema e importação de dados
 
 ### Schema
 
-Não copiar migrations antigas cegamente.
+A base usa as migrations versionadas de `backend/prisma/migrations`. Para subir
+um ambiente, aplicar `prisma migrate deploy`. Para uma alteração de modelo em
+desenvolvimento, gerar e revisar uma nova migration com `prisma migrate dev`.
+Não recriar migrations já aplicadas nem resetar bancos para atualizar a base.
 
-Usar o modelo atual como fonte de descoberta e recriar migrations limpas no novo backend.
+### Dados de desenvolvimento
 
-### Dados fictícios
+Não existe seed demo nesta entrega. A seed base atende somente RBAC e bootstrap
+administrativo explícito, sem dados operacionais fictícios.
 
-Converter para seed dev quando úteis.
+### Importação de dados reais
 
-### Dados reais
-
-Somente migrar após:
-
-- inventário;
-- aprovação;
-- mapping;
-- validação;
-- backup;
-- teste em homologação;
-- rollback.
+Não foi implementado importador. Uma eventual migração de dados existentes exige
+inventário, aprovação, mapeamento, validação, backup, homologação e plano de
+recuperação. Isso é independente da aplicação das migrations existentes.
 
 ---
 
@@ -1052,30 +1048,18 @@ Alinhado à infraestrutura:
 
 ## 33. Maturidade
 
-**Nível 3 — schema/migrations planejados.**
+O schema Prisma, relações, índices, constraints e quatro migrations estão
+implementados. A auditoria local confirmou migrations aplicadas e ausência de
+drift entre schema e banco.
 
-O documento contém:
+A seed executada duas vezes manteve 20 permissões, um papel `ADMIN`, 20 grants e
+zero usuários sem bootstrap configurado, confirmando idempotência dessa base.
+Nenhum usuário, perfil SMS ou dado operacional foi inventado.
 
-- entidades;
-- campos;
-- relações;
-- ID strategy;
-- delete policy;
-- auditoria;
-- dados sensíveis;
-- índices;
-- constraints;
-- seeds;
-- migrations;
-- retenção pendente identificada.
-
-Para Nível 4:
-
-- `schema.prisma` criado;
-- migrations aplicadas em banco limpo;
-- seeds base executados;
-- testes de integridade;
-- queries principais validadas.
+Os fluxos autenticados, consultas com dados corporativos representativos,
+retenção e procedimentos de backup/restore de produção ainda precisam de
+homologação. Ver [handoff](../handoff/HANDOFF_MILENA.md) e
+[pendências](../handoff/PENDENCIAS_HANDOFF.md).
 
 ---
 
@@ -1091,22 +1075,23 @@ Para Nível 4:
 - [x] histórico de colaborador suportado;
 - [x] contexto obra/função do afastamento preservado;
 - [x] leitura de alerta por usuário suportada;
-- [x] audit log previsto;
+- [x] audit log implementado;
 - [x] soft delete por entidade decidido;
 - [x] dados sensíveis classificados;
-- [x] índices principais planejados;
-- [x] constraints principais planejadas;
-- [x] seed base planejada;
-- [x] migrations planejadas;
+- [x] índices principais implementados;
+- [x] constraints principais implementadas;
+- [x] seed base implementada;
+- [x] migrations implementadas;
 - [x] retenção indefinida está explicitamente pendente;
-- [ ] schema Prisma implementado;
-- [ ] migrations executadas;
-- [ ] seeds executados;
-- [ ] integridade validada por migrations, constraints e smoke manual.
+- [x] schema Prisma implementado;
+- [x] quatro migrations executadas e sem drift;
+- [x] seed base executada duas vezes sem duplicação;
+- [x] integridade estrutural validada por migrations e constraints;
+- [ ] smoke manual autenticado dos fluxos de domínio — depende da App Registration.
 
 
 ---
 
 ## Escopo de qualidade desta entrega
 
-Não haverá seed específica para testes automatizados nem suíte de testes de banco nesta fase. O banco será validado pela aplicação das migrations em banco limpo, execução dos seeds, constraints, inspeção das relações e smoke manual da aplicação.
+Não haverá seed específica para testes automatizados nem suíte de testes de banco nesta fase. A auditoria aplicou/verificou migrations, executou a seed e comparou o banco com o schema sem resetar dados. O smoke autenticado da aplicação continua pendente.

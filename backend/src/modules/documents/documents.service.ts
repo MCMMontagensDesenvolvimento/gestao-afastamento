@@ -27,7 +27,8 @@ export class DocumentsService {
     if (input.andamentoId && !(await this.repository.progressBelongsToLeave(input.andamentoId, leaveId))) throw new AppError(422, "INVALID_PROGRESS_REFERENCE", "O andamento informado não pertence ao afastamento.");
     const extension = path.extname(input.file.originalname).toLowerCase();
     const allowedMimes = allowed.get(extension);
-    const detected = await fileTypeFromBuffer(input.file.buffer);
+    // Arquivos truncados também são entrada inválida, não falha interna da API.
+    const detected = await fileTypeFromBuffer(input.file.buffer).catch(() => undefined);
     if (!allowedMimes || !allowedMimes.includes(input.file.mimetype) || !detected || !allowedMimes.includes(detected.mime)) {
       throw new AppError(422, "INVALID_DOCUMENT_TYPE", "O formato real do arquivo não corresponde a um tipo permitido.");
     }

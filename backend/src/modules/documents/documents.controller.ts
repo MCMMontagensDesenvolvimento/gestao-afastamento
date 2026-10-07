@@ -17,6 +17,8 @@ export class DocumentsController {
     try {
       const { item, stream } = await this.service.download(req.params.id as string);
       res.type(item.mimeType); res.attachment(item.originalName); res.setHeader("Content-Length", String(item.sizeBytes));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.on("close", () => stream.destroy());
       stream.on("error", next).pipe(res);
     } catch (e) { next(e); }
   };

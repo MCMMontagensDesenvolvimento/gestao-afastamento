@@ -14,6 +14,8 @@ frontend/dist/
 backend/dist/
 dist/
 build/
+.output/
+.wrangler/
 
 # Validation
 coverage/
@@ -25,6 +27,9 @@ logs/
 .tanstack/
 .cache/
 .tmp/
+*.tmp
+*.swp
+*.swo
 
 # OS and editors
 .DS_Store
@@ -35,3 +40,9 @@ Thumbs.db
 # Runtime storage
 backend/storage/*
 !backend/storage/.gitkeep
+uploads/
+backups/
+dumps/
+*.dump
+*.sql.gz
+*.bak

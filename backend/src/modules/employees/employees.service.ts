@@ -19,8 +19,13 @@ export class EmployeesService {
   }
   async update(id: string, input: EmployeeUpdate, actor: string, requestId: string) {
     const current = await this.requireEmployee(id);
-    if ((input.obraId && input.obraId !== current.obraId) || (input.funcaoId && input.funcaoId !== current.funcaoId)) {
-      await this.ensureActiveContext(input.obraId ?? current.obraId, input.funcaoId ?? current.funcaoId);
+    const obraChanged = input.obraId !== undefined && input.obraId !== current.obraId;
+    const funcaoChanged = input.funcaoId !== undefined && input.funcaoId !== current.funcaoId;
+    if (obraChanged || funcaoChanged) {
+      const context = await this.repository.activeContext(input.obraId ?? current.obraId, input.funcaoId ?? current.funcaoId);
+      if ((obraChanged && !context.obra) || (funcaoChanged && !context.funcao)) {
+        throw new AppError(422, "INACTIVE_EMPLOYEE_CONTEXT", "A nova obra ou função deve existir e estar ativa.");
+      }
     }
     const item = await this.repository.update(id, input);
     await this.audit.record({ actorUserId: actor, action: "employee.update", entityType: "Colaborador", entityId: id, requestId, metadata: { fields: Object.keys(input) } });

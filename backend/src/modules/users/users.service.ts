@@ -26,20 +26,21 @@ export class UsersService {
   }
   async setActive(id: string, isActive: boolean, actor: string, requestId: string) {
     await this.requireUser(id);
-    if (!isActive && await this.repository.hasPermission(id, "permissions.manage") && !(await this.repository.hasOtherUserWithPermission(id, "permissions.manage"))) {
+    const result = await this.repository.setActive(id, isActive);
+    if (!result.changed) {
       throw new AppError(409, "LAST_ADMINISTRATOR_REQUIRED", "Não é possível inativar o único usuário com capacidade administrativa.");
     }
-    const user = await this.repository.setActive(id, isActive);
+    const user = result.value;
     await this.audit.record({ actorUserId: actor, action: isActive ? "user.activate" : "user.deactivate", entityType: "User", entityId: id, requestId });
     return { data: user };
   }
   async replaceRoles(id: string, roleIds: string[], actor: string, requestId: string) {
     await this.requireUser(id);
-    const losesAdmin = await this.repository.hasPermission(id, "permissions.manage") && !(await this.repository.rolesProvidePermission(roleIds, "permissions.manage"));
-    if (losesAdmin && !(await this.repository.hasOtherUserWithPermission(id, "permissions.manage"))) {
+    const result = await this.repository.replaceRoles(id, roleIds, actor);
+    if (!result.changed) {
       throw new AppError(409, "LAST_ADMINISTRATOR_REQUIRED", "Não é possível remover a capacidade administrativa do único administrador.");
     }
-    const user = await this.repository.replaceRoles(id, roleIds, actor);
+    const user = result.value;
     if (!user) throw new AppError(422, "INVALID_ROLE", "Um ou mais papéis não existem ou estão inativos.");
     await this.audit.record({ actorUserId: actor, action: "user.roles.replace", entityType: "User", entityId: id, requestId, metadata: { roleIds } });
     return { data: user };

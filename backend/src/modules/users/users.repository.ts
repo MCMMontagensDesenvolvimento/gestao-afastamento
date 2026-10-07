@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../infrastructure/database/prisma.js";
+import { mutateAdministrativeAccess } from "../access/administrative-access.repository.js";
 
 const publicInclude = {
   roles: { include: { role: { select: { id: true, code: true, name: true, isActive: true } } } },
@@ -28,28 +29,19 @@ export class UsersRepository {
   create(data: { name: string; email: string; isActive: boolean }) { return prisma.user.create({ data }); }
   update(id: string, data: { name?: string | undefined }) { return prisma.user.update({ where: { id }, data: data.name === undefined ? {} : { name: data.name } }); }
   setActive(id: string, isActive: boolean) {
-    return prisma.$transaction(async (tx) => {
+    return mutateAdministrativeAccess(async (tx) => {
       const user = await tx.user.update({ where: { id }, data: { isActive } });
       if (!isActive) await tx.userSession.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
       return user;
     });
   }
   async replaceRoles(userId: string, roleIds: string[], assignedById: string) {
-    return prisma.$transaction(async (tx) => {
+    return mutateAdministrativeAccess(async (tx) => {
       const count = await tx.role.count({ where: { id: { in: roleIds }, isActive: true } });
       if (count !== roleIds.length) return null;
       await tx.userRole.deleteMany({ where: { userId } });
       if (roleIds.length) await tx.userRole.createMany({ data: roleIds.map((roleId) => ({ userId, roleId, assignedById })) });
       return tx.user.findUnique({ where: { id: userId }, include: publicInclude });
     });
-  }
-  hasPermission(userId: string, permission: string) {
-    return prisma.user.count({ where: { id: userId, isActive: true, roles: { some: { role: { isActive: true, permissions: { some: { permission: { code: permission } } } } } } } }).then(Boolean);
-  }
-  hasOtherUserWithPermission(userId: string, permission: string) {
-    return prisma.user.count({ where: { id: { not: userId }, isActive: true, roles: { some: { role: { isActive: true, permissions: { some: { permission: { code: permission } } } } } } } }).then(Boolean);
-  }
-  rolesProvidePermission(roleIds: string[], permission: string) {
-    return prisma.role.count({ where: { id: { in: roleIds }, isActive: true, permissions: { some: { permission: { code: permission } } } } }).then(Boolean);
   }
 }

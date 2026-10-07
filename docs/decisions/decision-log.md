@@ -32,7 +32,7 @@
 | DEC-016 | 05/10/2026 | Decidida | O frontend entregue à Milena deve atingir nível equivalente a pronto para homologação: API/auth integradas, estados completos, testes mínimos e build validado. | A entrega é uma base operacional, não somente um protótipo visual. | Qualidade e handoff. |
 
 | DEC-017 | 05/10/2026 | Decidida | Backend será monólito modular separado do frontend e exporá REST JSON em `/api/v1`. | Complexidade proporcional ao domínio e handoff sustentável. | Arquitetura, backend, API, deploy. |
-| DEC-018 | 05/10/2026 | Decidida | Frontend final será SPA React/Vite, mantendo TanStack Router; runtime server-side herdado será removido quando redundante. | Não há necessidade de SSR e não há ganho em migrar o router funcional. | Frontend, Docker, manutenção. |
+| DEC-018 | 05/10/2026 | Decidida | Frontend final será SPA React/Vite, mantendo TanStack Router, com build estático servido por Nginx. | Não há necessidade de SSR e não há ganho em migrar o router funcional. | Frontend, Docker, manutenção. |
 | DEC-019 | 05/10/2026 | Decidida | Login Microsoft será mediado pelo backend via OIDC; sessão local será server-side em PostgreSQL, identificada por cookie HttpOnly opaco. | Revogação central, menor exposição no navegador e ausência de necessidade de Redis. | Auth, backend, banco, frontend, segurança. |
 | DEC-020 | 05/10/2026 | Decidida | A aplicação será single-tenant; os dois domínios corporativos elegíveis não representam tenants distintos. | Evitar isolamento multi-tenant desnecessário. | Banco, autorização, arquitetura. |
 | DEC-021 | 05/10/2026 | Decidida | Backend utilizará PostgreSQL + Prisma com migrations versionadas. | Domínio relacional e necessidade de integridade, tipagem e manutenção. | Banco, backend, infra. |
@@ -40,7 +40,7 @@
 | DEC-023 | 05/10/2026 | Decidida | Logs backend serão estruturados em JSON com request ID; audit log será separado e sanitizado. | Diagnóstico e rastreabilidade sem expor dados sensíveis. | Backend, segurança, observabilidade. |
 | DEC-024 | 05/10/2026 | Decidida | A infraestrutura será Docker/Compose portável; host/orquestrador real de produção será definido pela MCM antes do go-live. | Não assumir infraestrutura corporativa não informada. | Infraestrutura, deploy. |
 | DEC-025 | 05/10/2026 | Decidida | A baseline de backup de produção será diária com retenção mínima inicial de 14 dias, backup antes de migration crítica e restore testado antes do go-live. | Proteger persistência e reduzir risco operacional. | Infraestrutura, banco, operação. |
-| DEC-P08 | 05/10/2026 | Pendente | Obter tenant ID(s), Client ID, responsáveis e callbacks da App Registration Microsoft da MCM. | Necessário para implementar autenticação real. | Auth, segurança, ambiente. |
+| DEC-P08 | 05/10/2026 | Pendente | Obter tenant ID(s), Client ID, responsáveis e callbacks da App Registration Microsoft da MCM. | Necessário para configurar e homologar a autenticação real implementada. | Auth, segurança, ambiente. |
 | DEC-P09 | 05/10/2026 | Pendente | Definir URLs/domínios de homologação, produção e API. | Necessário para CORS, cookies, callbacks, SSL e deploy. | Infraestrutura, auth. |
 | DEC-P10 | 05/10/2026 | Pendente | Definir host/orquestrador de homologação e produção e estratégia corporativa de secrets. | Infraestrutura MCM ainda não informada. | Infraestrutura, operação. |
 | DEC-P11 | 05/10/2026 | Pendente | Definir provider S3-compatible de produção ou aprovar volume persistente privado com backup equivalente. | Fechar storage de documentos. | Infra, backend, segurança. |
@@ -77,10 +77,31 @@ A auditoria inicial mapeou: lista/form/detalhe de afastamentos, histórico, docu
 
 
 | DEC-037 | 06/10/2026 | Implementada | Frontend SPA Vite/React com TanStack Router, Query, API client e services por domínio; somente `/api/v1`, sessão HttpOnly e capabilities do backend. | Concluir integração e eliminar acesso direto ao banco/storage. | Frontend, auth e handoff. |
-| DEC-038 | 06/10/2026 | Implementada | Supabase, Lovable e Bun removidos da stack operacional; npm/package-lock, build estático e Nginx com fallback SPA e proxy da API. | Projeto MCM independente e Docker portável. | Dependências, build e infraestrutura. |
+| DEC-038 | 06/10/2026 | Implementada | A stack operacional usa npm/package-lock, build estático e Nginx com fallback SPA e proxy da API; persistência é exclusiva do backend. | Projeto MCM independente e Docker portável. | Dependências, build e infraestrutura. |
 
 O lockfile conserva metadado de peer opcional de tipos de outro runtime em uma
 dependência transitiva do plugin do roteador; esse pacote de tipos não é instalado
 nem necessário. Não se adultera o lockfile para esconder metadados publicados.
 A App Registration Microsoft, a matriz operacional de capacidades, o provider de
 storage de produção, Apdata e a fórmula de duração continuam pendentes.
+
+
+## Consolidação da auditoria e handoff — 06/10/2026
+
+| ID | Data | Status | Decisão | Justificativa | Impacto |
+|---|---|---|---|---|---|
+| DEC-039 | 06/10/2026 | Consolidada | O repasse da base distingue implementação, validação técnica local e homologação autenticada. App Registration ausente não impede o handoff; login real e jornadas protegidas continuam pendentes. | Refletir o limite das evidências sem criar bypass ou credenciais fictícias. | Handoff, qualidade e operação. |
+| DEC-040 | 06/10/2026 | Consolidada | Compose usa o ambiente da raiz; execução nativa usa envs das camadas. Migrations e seed são operações explícitas; na implantação usam job de ferramentas separado da imagem runtime. | A imagem runtime não contém Prisma CLI/tsx; tornar o setup reproduzível e preservar o histórico do banco. | Runbook, Docker e continuidade. |
+
+A auditoria corrigiu falhas nas regras já existentes: retorno de login restrito à
+origem da SPA, paginação sem submit acidental, menus sem ações, validação de
+endereço corporativo, preservação de referências históricas inativas e proteção
+transacional do último administrador com acesso utilizável. Logs foram limitados
+a metadados operacionais, erros de upload/download mantêm tratamento estruturado
+e a OpenAPI foi alinhada às respostas efetivas. Essas correções não definem novos
+perfis, fórmulas, integrações ou políticas corporativas.
+
+As pendências continuam em [PENDENCIAS_HANDOFF](../handoff/PENDENCIAS_HANDOFF.md).
+As instruções e limites da entrega estão no [handoff](../handoff/HANDOFF_MILENA.md)
+e no [runbook](../runbooks/setup-local.md). Nenhum prazo corporativo de retenção,
+provider, contrato Apdata ou grant SMS foi presumido.

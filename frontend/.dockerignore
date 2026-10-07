@@ -1,6 +1,8 @@
 node_modules
 dist
 build
+.output
+.wrangler
 coverage
 .env
 .env.*
@@ -11,3 +13,9 @@ logs
 .tmp
 .tanstack
 .DS_Store
+uploads
+backups
+dumps
+*.dump
+*.sql.gz
+*.bak

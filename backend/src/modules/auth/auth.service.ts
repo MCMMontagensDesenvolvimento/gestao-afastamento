@@ -30,8 +30,9 @@ export class AuthService {
   }
 
   async startLogin(returnTo?: string): Promise<{ url: string; flow: LoginFlow }> {
+    const destination = normalizeReturnTo(returnTo);
     const { url, context } = await this.identityProvider.createAuthorizationRequest();
-    return { url, flow: { ...context, returnTo: normalizeReturnTo(returnTo), createdAt: Date.now() } };
+    return { url, flow: { ...context, returnTo: destination, createdAt: Date.now() } };
   }
 
   async completeLogin(currentUrl: URL, flow: LoginFlow, requestId: string) {
@@ -56,18 +57,18 @@ export class AuthService {
       requestId,
     });
     if (!session) throw new AppError(409, "EXTERNAL_IDENTITY_ALREADY_LINKED", "A identidade Microsoft já está vinculada a outro usuário.");
-    return { token, expiresAt, returnTo: flow.returnTo };
+    return { token, expiresAt, returnTo: normalizeReturnTo(flow.returnTo) };
   }
 
   async authenticate(token: string | undefined): Promise<AuthenticatedPrincipal> {
-    if (!token) throw new AppError(401, "AUTHENTICATION_REQUIRED", "É necessário autenticar-se.");
+    if (typeof token !== "string" || !token) throw new AppError(401, "AUTHENTICATION_REQUIRED", "É necessário autenticar-se.");
     const session = await this.repository.findSessionByHash(hashToken(token));
     const now = new Date();
     if (!session || session.revokedAt || session.expiresAt <= now || !session.user.isActive) {
       throw new AppError(401, "SESSION_INVALID", "A sessão expirou ou foi revogada.");
     }
     if (!session.lastSeenAt || now.getTime() - session.lastSeenAt.getTime() >= env.SESSION_TOUCH_INTERVAL_SECONDS * 1000) {
-      void this.repository.touchSession(session.id, now);
+      await this.repository.touchSession(session.id, now);
     }
     const roles = session.user.roles.map(({ role }) => role.code).sort();
     const permissions = [...new Set(session.user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.code)))].sort();
@@ -85,8 +86,12 @@ export function hashToken(token: string): string {
 
 function normalizeReturnTo(value?: string): string {
   if (!value) return "/";
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new AppError(422, "INVALID_RETURN_TO", "O destino após login deve ser uma rota interna.");
   }
-  return value;
+  const destination = new URL(value, env.FRONTEND_ORIGIN);
+  if (destination.origin !== new URL(env.FRONTEND_ORIGIN).origin) {
+    throw new AppError(422, "INVALID_RETURN_TO", "O destino após login deve ser uma rota interna.");
+  }
+  return `${destination.pathname}${destination.search}${destination.hash}`;
 }

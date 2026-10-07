@@ -18,7 +18,7 @@ import type {
 } from "./identity-provider.js";
 
 export class MicrosoftEntraAdapter implements IdentityProvider {
-  private configuration?: Promise<Configuration>;
+  private configuration: Promise<Configuration> | undefined;
   private readonly configured = Boolean(
     env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET && env.MICROSOFT_TENANT_IDS.length > 0,
   );
@@ -74,7 +74,10 @@ export class MicrosoftEntraAdapter implements IdentityProvider {
       new URL(`https://login.microsoftonline.com/${encodeURIComponent(env.MICROSOFT_TENANT_IDS[0]!)}/v2.0`),
       env.MICROSOFT_CLIENT_ID,
       env.MICROSOFT_CLIENT_SECRET,
-    );
+    ).catch((error: unknown) => {
+      this.configuration = undefined;
+      throw error;
+    });
     return this.configuration;
   }
 }

@@ -1,9 +1,9 @@
 # 08 — Backend — MCM Gestão de Afastados
 
-**Versão:** 1.0  
-**Data:** 05/10/2026  
-**Status:** Blueprint aprovado para implementação  
-**Maturidade:** Nível 3 — Backend planejado e pronto para construção  
+**Versão:** 1.1
+**Data:** 06/10/2026
+**Status:** Base implementada e auditada; homologação autenticada pendente
+**Maturidade:** Backend integrado para handoff; produção não homologada
 **Branch de referência:** `arquitetura/base-integrada`
 
 ---
@@ -12,7 +12,7 @@
 
 Definir a implementação server-side da MCM Gestão de Afastados, transformando as funcionalidades e decisões arquiteturais já validadas em módulos, responsabilidades, validações, policies, repositories, integrações e critérios técnicos claros.
 
-O backend será a autoridade final de:
+O backend é a autoridade final de:
 
 - autenticação;
 - autorização;
@@ -25,28 +25,26 @@ O backend será a autoridade final de:
 - cálculo de alertas;
 - cálculos do dashboard.
 
-O frontend não acessará banco, storage ou provedor de identidade diretamente.
+O frontend consome a API; banco, storage e troca de credenciais Microsoft ficam no backend.
 
 ---
 
 ## 2. Diagnóstico atual
 
-O repositório possui `/backend`, mas ainda não contém aplicação backend funcional.
+O backend Express/TypeScript está implementado em `/backend`, com API em
+`/api/v1`, autenticação Microsoft configurável, sessão HttpOnly em PostgreSQL,
+RBAC, módulos do domínio, auditoria e healthchecks. O frontend consome essa API.
 
-O frontend exportado possui comportamento de produto suficiente para orientar a construção do backend, porém a persistência atual ainda está acoplada ao navegador/infraestrutura temporária.
+Prisma e quatro migrations estão aplicados no ambiente local, sem drift. A seed
+base foi executada duas vezes e preservou 20 permissões, um papel `ADMIN`, 20
+associações de permissões e zero usuários, pois nenhum bootstrap de usuário foi
+solicitado. O storage disponível é o adapter local privado; S3 permanece pendente.
 
-### Lacunas server-side atuais
-
-- API de aplicação inexistente;
-- autenticação corporativa inexistente;
-- sessão de aplicação inexistente;
-- autorização server-side inexistente;
-- Prisma definitivo inexistente;
-- migrations definitivas inexistentes;
-- storage definitivo inexistente;
-- audit log inexistente;
-- paginação server-side inexistente;
-- healthchecks definitivos inexistentes.
+O código de autenticação existe, mas o fluxo Microsoft e os CRUDs autenticados
+não foram homologados por ausência da App Registration real. A configuração de
+produção, a matriz SMS e as demais dependências externas continuam separadas no
+[handoff](../handoff/HANDOFF_MILENA.md) e nas
+[pendências](../handoff/PENDENCIAS_HANDOFF.md).
 
 ---
 
@@ -56,8 +54,8 @@ O frontend exportado possui comportamento de produto suficiente para orientar a 
 backend_blueprint:
   project:
     name: "MCM Gestão de Afastados"
-    execution_mode: "Frontend validado exportado"
-    current_status: "não iniciado"
+    execution_mode: "Base full stack integrada"
+    current_status: "implementado; homologação autenticada pendente"
     target_for_handoff: "integrado"
 
   stack:
@@ -126,6 +124,11 @@ backend_blueprint:
 ---
 
 ## 4. Estrutura alvo do backend
+
+O diagrama representa a organização lógica. No código entregue, os módulos usam
+os nomes `auth`, `users`, `access`, `catalogs`, `employees`, `leaves`, `progress`,
+`documents`, `notifications`, `dashboard`, `audit` e `health`. A configuração está
+em `src/config/env.ts`; os middlewares são organizados em `src/shared/middlewares`.
 
 ```text
 backend/
@@ -330,7 +333,7 @@ Cookie contém identificador aleatório opaco; o banco guarda apenas hash.
 
 ### Limpeza
 
-Criar mecanismo simples de limpeza de sessões expiradas/revogadas, inicialmente por comando administrativo/script periódico. Não introduzir worker só para isso.
+Sessões expiradas/revogadas já são recusadas na autenticação. A limpeza física periódica ainda não possui comando implementado; sua rotina operacional deve ser definida na continuidade, sem introduzir worker apenas para isso.
 
 ---
 
@@ -570,20 +573,23 @@ O encerramento ocorre ao trocar a situação para uma classificação `ENCERRADO
 ### Storage adapter
 
 ```ts
+interface StagedDeletion {
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
 interface DocumentStorage {
-  save(input: SaveDocumentInput): Promise<StoredDocument>;
+  save(content: Buffer, extension: string): Promise<string>;
   open(key: string): Promise<Readable>;
-  delete(key: string): Promise<void>;
-  exists(key: string): Promise<boolean>;
+  remove(key: string): Promise<void>;
+  stageDelete(key: string): Promise<StagedDeletion>;
 }
 ```
 
-Implementações:
-
-```text
-LocalStorageAdapter
-S3StorageAdapter
-```
+Implementado: `LocalDocumentStorage`, em
+`backend/src/infrastructure/storage/local-document-storage.ts`.
+O contrato está em `document-storage.ts`; o adapter S3 ainda não está implementado.
+Selecionar `STORAGE_DRIVER=s3` retorna `S3_STORAGE_NOT_CONFIGURED`.
 
 ### Limites
 
@@ -625,10 +631,10 @@ Nenhuma URL pública permanente.
 Baseline técnica:
 
 1. validar `documents.delete`;
-2. remover binário do storage;
-3. marcar metadata como excluída/tombstone;
-4. registrar autor/motivo quando definido;
-5. auditar.
+2. preparar a remoção reversível do binário (`stageDelete`);
+3. gravar tombstone e auditoria transacionalmente, com autor/motivo quando definido;
+4. confirmar a remoção do binário;
+5. compensar a alteração de metadata e restaurar o arquivo se houver falha.
 
 A retenção definitiva de metadata/documentos será revisada em segurança/compliance.
 
@@ -964,55 +970,41 @@ Validar por:
 
 ## 32. Critérios de pronto para integração
 
-- [ ] estrutura `/backend` criada;
-- [ ] npm/package-lock;
-- [ ] TypeScript strict;
-- [ ] env validado;
-- [ ] Express inicializa;
-- [ ] Prisma centralizado;
-- [ ] migrations aplicam;
-- [ ] seed base roda de forma idempotente;
-- [ ] auth Microsoft implementada;
-- [ ] sessão em PostgreSQL;
-- [ ] `/auth/me`;
-- [ ] logout;
-- [ ] RBAC server-side;
-- [ ] módulos do domínio implementados;
-- [ ] paginação server-side;
-- [ ] storage adapter;
-- [ ] auditoria;
-- [ ] Pino/requestId;
-- [ ] healthchecks;
-- [ ] smoke manual dos fluxos implementados concluído;
-- [ ] frontend consome somente API.
+- [x] estrutura `/backend` criada;
+- [x] npm/package-lock;
+- [x] TypeScript strict;
+- [x] env validado;
+- [x] Express inicializa;
+- [x] Prisma centralizado;
+- [x] migrations aplicam;
+- [x] seed base roda de forma idempotente;
+- [x] fluxo Microsoft implementado e configurável, sem credenciais fictícias;
+- [x] sessão em PostgreSQL;
+- [x] `/auth/me`;
+- [x] logout;
+- [x] RBAC server-side;
+- [x] módulos do domínio implementados;
+- [x] paginação server-side;
+- [x] storage adapter local privado; provider S3 pendente;
+- [x] auditoria;
+- [x] Pino/requestId;
+- [x] healthchecks;
+- [ ] smoke manual autenticado completo — depende da App Registration Microsoft;
+- [x] frontend consome somente API.
 
 ---
 
 ## 33. Maturidade
 
-### Documento
+A base está implementada e integrada ao frontend, com banco real, sessão,
+permissões, CRUDs, documentos privados, alertas, dashboard, logs e healthchecks.
+Migrations, seed idempotente e execução Docker local foram verificados.
 
-**Nível 3 — pronto para construção.**
-
-### Código atual
-
-**Nível 0/1 — backend ainda não implementado.**
-
-### Meta de handoff para Milena
-
-**Nível 3 — Backend integrado:**
-
-- frontend consumindo API;
-- auth real configurável;
-- permissões;
-- banco real;
-- seeds;
-- CRUDs;
-- documentos;
-- alertas;
-- dashboard.
-
-Docker, logs, migrations, smoke e revisão de segurança devem aproximá-lo do Nível 4 antes de homologação formal.
+Isso não representa homologação autenticada nem aprovação de produção. O fluxo
+com identidade Microsoft real, a matriz operacional de permissões e a operação
+corporativa precisam ser validados conforme o
+[handoff](../handoff/HANDOFF_MILENA.md) e as
+[pendências](../handoff/PENDENCIAS_HANDOFF.md).
 
 ---
 

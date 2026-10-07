@@ -1,8 +1,8 @@
 # 09 — Frontend — MCM Gestão de Afastados
 
-**Versão do documento:** 1.1
+**Versão do documento:** 1.2
 **Data:** 06/10/2026
-**Status:** Fase 3 implementada; validação autenticada depende da App Registration Microsoft
+**Status:** Frontend integrado e auditado; validação autenticada depende da App Registration Microsoft
 **Produto:** MCM Gestão de Afastados  
 **Objetivo da fase:** transformar o frontend atual em uma base sustentável, integrada a backend real e pronta para handoff técnico à Milena.
 
@@ -30,9 +30,8 @@ O frontend final deverá:
 
 O frontend usa exclusivamente `/api/v1`, através de API client centralizado com
 JSON/multipart, `credentials: include`, erros oficiais e `requestId`. Não há acesso
-direto a banco ou storage. Supabase, Lovable e Bun foram removidos da stack do
-produto. O build é SPA Vite/React, com TanStack Router e TanStack Query; não há
-TanStack Start, Nitro, Wrangler nem runtime frontend server-side.
+direto a banco ou storage. O build é SPA Vite/React, com TanStack Router e TanStack
+Query, servido como arquivos estáticos por Nginx em produção.
 
 `src/main.tsx` monta a SPA; `routes/__root.tsx` valida sessão e capabilities antes
 de renderizar as rotas privadas. `/login` é pública e `/usuarios` administra
