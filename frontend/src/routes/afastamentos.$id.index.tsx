@@ -32,6 +32,8 @@ export const Route = createFileRoute("/afastamentos/$id/")({
   component: PaginaDetalhe,
 });
 
+
+
 function PaginaDetalhe() {
   const { id } = useParams({ from: "/afastamentos/$id/" });
   const { can } = useAuth();

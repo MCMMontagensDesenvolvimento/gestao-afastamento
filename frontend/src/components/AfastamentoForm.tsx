@@ -1,20 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { useAuth } from "@/lib/auth/session";
 import { ApiError, errorMessage } from "@/lib/api/errors";
 import { useSaveLeave } from "@/hooks/use-leaves";
-import { employeesPageQuery, employeeQuery } from "@/hooks/use-employees";
-import { useServerPagination } from "@/hooks/use-server-pagination";
+import { employeeQuery } from "@/hooks/use-employees";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { listEmployees } from "@/services/employees";
 import {
   Select,
   SelectContent,
@@ -96,22 +96,65 @@ export function AfastamentoForm({ afastamento }: { afastamento?: Afastamento | n
   const erros = Object.fromEntries(
     Object.entries(errors).map(([key, value]) => [key, value.message]),
   );
+
   const [buscaColab, setBuscaColab] = useState("");
-  const colabPag = useServerPagination();
+  const [buscaDebounced, setBuscaDebounced] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBuscaDebounced(buscaColab.trim());
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [buscaColab]);
+
   const colaboradoresRes = useQuery({
-    ...employeesPageQuery({
-      ativo: true,
-      search: buscaColab,
-      page: colabPag.pagina,
-      perPage: colabPag.tamanho,
-    }),
-    enabled: !editando && can("employees.read"),
-    placeholderData: keepPreviousData,
+    queryKey: ["employees", "select", buscaDebounced],
+    queryFn: () =>
+      listEmployees({
+        search: buscaDebounced || undefined,
+        page: 1,
+        perPage: 20,
+      }),
+    enabled: !editando && can("employees.read") && buscaDebounced.length >= 2,
+    placeholderData: (previousData) => previousData,
   });
+  // const [buscaColab, setBuscaColab] = useState("");
+
+  // const colaboradoresRes = useQuery({
+  //   queryKey: ["employees", "select-all", buscaColab.trim()],
+  //   queryFn: async () => {
+  //     const tamanhoPagina = 100;
+  //     const primeiraPagina = await listEmployees({
+  //       search: buscaColab.trim() || undefined,
+  //       page: 1,
+  //       perPage: tamanhoPagina,
+  //     });
+
+  //     const totalPaginas = primeiraPagina.meta.totalPages;
+  //     const paginasRestantes = await Promise.all(
+  //       Array.from({ length: Math.max(0, totalPaginas - 1) }, (_, i) =>
+  //         listEmployees({
+  //           search: buscaColab.trim() || undefined,
+  //           page: i + 2,
+  //           perPage: tamanhoPagina,
+  //         }),
+  //       ),
+  //     );
+
+  //     return {
+  //       ...primeiraPagina,
+  //       data: [...primeiraPagina.data, ...paginasRestantes.flatMap((pagina) => pagina.data)],
+  //     };
+  //   },
+  //   enabled: !editando && can("employees.read"),
+  // });
+
   const selecionadoRes = useQuery({
     ...employeeQuery(form.colaborador_id),
     enabled: !editando && Boolean(form.colaborador_id) && can("employees.read"),
   });
+
   const obrasRes = useQuery(configQuery("obras", !editando));
   const funcoesRes = useQuery(configQuery("funcoes", !editando));
   const beneficiosRes = useQuery(configQuery("tipos_beneficio", !editando));
@@ -273,7 +316,7 @@ export function AfastamentoForm({ afastamento }: { afastamento?: Afastamento | n
               value={buscaColab}
               onChange={(e) => {
                 setBuscaColab(e.target.value);
-                colabPag.setPagina(1);
+                // colabPag.setPagina(1);
               }}
               className="mt-1.5"
               disabled={editando}
@@ -303,13 +346,13 @@ export function AfastamentoForm({ afastamento }: { afastamento?: Afastamento | n
                 {erros["colaborador_id"]}
               </p>
             ) : null}
-            {!editando ? (
+            {/* {!editando ? (
               <Paginacao
                 {...colabPag}
                 total={colaboradoresRes.data?.meta.total ?? 0}
                 totalPaginas={colaboradoresRes.data?.meta.totalPages ?? 1}
               />
-            ) : null}
+            ) : null} */}
           </div>
 
           <CampoSelect

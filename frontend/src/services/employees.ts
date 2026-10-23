@@ -49,10 +49,42 @@ function mapEmployee(item: EmployeeDto): Colaborador {
     funcoes: item.funcao,
   };
 }
+
+
 export async function listEmployees(params: Params = {}): Promise<Page<Colaborador>> {
   const response = await api<Page<EmployeeDto>>(withParams("/colaboradores", params));
   return { ...response, data: response.data.map(mapEmployee) };
 }
+
+export type ApdataContratado = Record<string, unknown>;
+
+export async function listarContratadosApdata(
+  ativos = true,
+): Promise<{ data: ApdataContratado[] }> {
+  return api<{ data: ApdataContratado[] }>(
+    withParams("/colaboradores/apdata/contratados", { ativos }),
+  );
+}
+
+
+export async function sincronizarContratadosApdata() {
+  return api<{ data?: unknown; message?: string }>(
+    "/colaboradores/apdata/sincronizar",
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function sincronizarAfastamentosApdata() {
+  return api<{ data?: unknown; message?: string }>(
+    "/colaboradores/apdata/sincronizar-afastamentos",
+    {
+      method: "POST",
+    },
+  );
+}
+
 export async function getEmployee(id: string) {
   const response = await api<{ data: EmployeeDto }>(`/colaboradores/${id}`);
   return mapEmployee(response.data);

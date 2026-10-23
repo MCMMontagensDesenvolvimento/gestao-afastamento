@@ -11,6 +11,7 @@ import { notificationsRouter } from "../modules/notifications/notifications.rout
 import { leaveProgressRouter, progressRouter } from "../modules/progress/progress.routes.js";
 import { usersRouter } from "../modules/users/users.routes.js";
 
+
 export const apiRouter = Router();
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/usuarios", usersRouter);

@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth/session";
 import { errorMessage } from "@/lib/api/errors";
 import { useServerPagination } from "@/hooks/use-server-pagination";
 import { leavesPageQuery, leaveCountsQuery } from "@/hooks/use-leaves";
-import { Eye, Pencil, Plus } from "lucide-react";
+import { Eye, Pencil, Plus, RefreshCw } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import {
   type Afastamento,
   type Classificacao,
 } from "@/lib/dados";
+import { sincronizarAfastamentosApdata } from "@/services/employees";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -150,6 +151,37 @@ function PaginaAfastados() {
 
   const temFiltro = filtrosAtivos > 0 || busca.trim() !== "" || aba !== "TODOS";
 
+  const sincronizarMutation = useMutation({
+    mutationFn: sincronizarAfastamentosApdata,
+
+    onSuccess: async () => {
+      await Promise.all([refetch(), counts.refetch()]);
+    },
+  });
+
+  // const sincronizarMutation = useMutation({
+  //   mutationFn: async () => {
+  //     const response = await fetch("/api/colaboradores/apdata/sincronizar-afastamentos", {
+  //       method: "POST",
+  //       credentials: "include",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //       },
+  //     });
+
+  //     const resultado = await response.json().catch(() => null);
+
+  //     if (!response.ok) {
+  //       throw new Error(resultado?.message ?? "Não foi possível sincronizar os afastamentos.");
+  //     }
+
+  //     return resultado;
+  //   },
+  //   onSuccess: async () => {
+  //     await Promise.all([refetch(), counts.refetch()]);
+  //   },
+  // });
+
   if (!can("leaves.read"))
     return (
       <AppLayout titulo="Afastados">
@@ -164,16 +196,44 @@ function PaginaAfastados() {
     <AppLayout
       titulo="Afastados"
       descricao="Colaboradores com afastamento registrado."
+
       acoes={
-        can("leaves.create") ? (
-          <Button asChild>
-            <Link to="/afastamentos/novo">
-              <Plus className="size-4" /> Novo afastamento
-            </Link>
-          </Button>
-        ) : null
+        <div className="flex flex-wrap gap-2">
+          {can("employees.manage") && (
+            <Button
+              variant="outline"
+              disabled={sincronizarMutation.isPending}
+              onClick={() => sincronizarMutation.mutate()}
+            >
+              <RefreshCw
+                className={`size-4 ${sincronizarMutation.isPending ? "animate-spin" : ""}`}
+              />
+              {sincronizarMutation.isPending ? "Sincronizando..." : "Sincronizar APDATA"}
+            </Button>
+          )}
+
+          {can("leaves.create") && (
+            <Button asChild>
+              <Link to="/afastamentos/novo">
+                <Plus className="size-4" />
+                Novo afastamento
+              </Link>
+            </Button>
+          )}
+        </div>
       }
     >
+      {sincronizarMutation.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {errorMessage(sincronizarMutation.error)}
+        </p>
+      )}
+
+      {sincronizarMutation.isSuccess && (
+        <p role="status" className="text-sm text-green-600">
+          Sincronização concluída. A lista foi atualizada.
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-3">
         {cards.map((c) => (
           <div key={c.rotulo} className="rounded-md border border-border bg-card px-3 py-3 sm:px-4">

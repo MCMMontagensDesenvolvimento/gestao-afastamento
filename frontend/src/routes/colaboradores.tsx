@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { History, Loader2, Pencil, Plus, Power } from "lucide-react";
 import { toast } from "sonner";
 
@@ -8,7 +8,13 @@ import { useAuth } from "@/lib/auth/session";
 import { useServerPagination } from "@/hooks/use-server-pagination";
 import { employeesPageQuery, employeeHistoryQuery } from "@/hooks/use-employees";
 import { configQuery } from "@/hooks/use-catalogs";
-import { createEmployee, updateEmployee, setEmployeeActive } from "@/services/employees";
+import {
+  createEmployee,
+  updateEmployee,
+  setEmployeeActive,
+  listarContratadosApdata,
+  sincronizarContratadosApdata,
+} from "@/services/employees";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,8 +95,35 @@ const FORM_VAZIO: Form = {
   funcao_id: "",
 };
 
+function textoApdata(valor: unknown): string {
+  if (typeof valor === "string" || typeof valor === "number") {
+    return String(valor);
+  }
+
+  if (valor && typeof valor === "object") {
+    if ("CAR_D1sCargo" in valor) {
+      return textoApdata(valor.CAR_D1sCargo);
+    }
+
+    if ("SIT_D1sSituacao" in valor) {
+      return textoApdata(valor.SIT_D1sSituacao);
+    }
+
+    if ("CCU_D1sCentroCusto" in valor) {
+      return textoApdata(valor.CCU_D1sCentroCusto);
+    }
+
+    if ("FOL_D1sFolha" in valor) {
+      return textoApdata(valor.FOL_D1sFolha);
+    }
+  }
+
+  return "—";
+}
+
 function PaginaColaboradores() {
   const queryClient = useQueryClient();
+
   const { can } = useAuth();
   const pagination = useServerPagination();
   const obrasQuery = useQuery({ ...configQuery("obras", false), enabled: can("settings.manage") });
@@ -99,6 +132,22 @@ function PaginaColaboradores() {
     enabled: can("settings.manage"),
   });
   const obras = obrasQuery.data ?? [];
+  const sincronizarApdata = useMutation({
+    mutationFn: sincronizarContratadosApdata,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["leaves"] });
+      await queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      await obrasQuery.refetch();
+      await funcoesQuery.refetch();
+
+      toast.success("Sincronização do APDATA concluída.");
+    },
+    onError: (erro: Error) => {
+      toast.error(mensagemAmigavel(erro, "Não foi possível sincronizar o APDATA."));
+    },
+  });
   const funcoes = funcoesQuery.data ?? [];
 
   const [busca, setBusca] = useState("");
@@ -109,6 +158,11 @@ function PaginaColaboradores() {
   const [editando, setEditando] = useState<Colaborador | null>(null);
   const [form, setForm] = useState<Form>(FORM_VAZIO);
   const [confirmar, setConfirmar] = useState<Colaborador | null>(null);
+  const apdataQuery = useQuery({
+    queryKey: ["employees", "apdata", "contratados", true],
+    queryFn: () => listarContratadosApdata(true),
+    enabled: can("employees.read"),
+  });
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     ...employeesPageQuery({
@@ -224,11 +278,23 @@ function PaginaColaboradores() {
     <AppLayout
       titulo="Colaboradores"
       descricao="Cadastro de colaboradores da empresa."
+
       acoes={
         can("employees.manage") ? (
-          <Button onClick={abrirNovo}>
-            <Plus className="size-4" /> Novo colaborador
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => sincronizarApdata.mutate()}
+              disabled={sincronizarApdata.isPending}
+            >
+              {sincronizarApdata.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {sincronizarApdata.isPending ? "Sincronizando APDATA..." : "Sincronizar APDATA"}
+            </Button>
+
+            <Button onClick={abrirNovo}>
+              <Plus className="size-4" /> Novo colaborador
+            </Button>
+          </div>
         ) : null
       }
     >
@@ -369,6 +435,71 @@ function PaginaColaboradores() {
           </>
         )}
       </div>
+
+      {/* <section className="mt-8 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Contratados da APDATA</h2>
+          <p className="text-sm text-muted-foreground">
+            Colaboradores recebidos da integração externa. Consulta somente leitura.
+          </p>
+        </div>
+
+        {apdataQuery.isPending ? (
+          <div className="rounded-md border border-border bg-card p-4">
+            <TabelaSkeleton />
+          </div>
+        ) : apdataQuery.isError ? (
+          <EstadoErro
+            mensagem={mensagemAmigavel(
+              apdataQuery.error,
+              "Não foi possível carregar os contratados da APDATA.",
+            )}
+            aoTentarNovamente={() => void apdataQuery.refetch()}
+          />
+        ) : apdataQuery.data.data.length === 0 ? (
+          <EstadoVazio
+            titulo="Nenhum contratado encontrado na APDATA."
+            descricao="Não há contratados ativos para exibir."
+          />
+        ) : (
+          <div className="overflow-hidden rounded-md border border-border bg-card">
+            <Table containerClassName={TABELA_CONTAINER}>
+              <TableHeader className={CABECALHO_FIXO}>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Matrícula / Código</TableHead>
+                  <TableHead>Cargo</TableHead>
+                  <TableHead>Situação</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {apdataQuery.data.data.map((item, index) => {
+                  const nome = textoApdata(item["CON_DssNome"]);
+
+                  const codigo = textoApdata(item["CON_CdiContratado"]);
+
+                  const cargo = textoApdata(item["cargo"]);
+
+                  const situacao = textoApdata(item["situacao"]);
+
+                  return (
+                    <TableRow key={`${codigo}-${index}`}>
+                      <TableCell className="max-w-[280px] truncate font-medium">{nome}</TableCell>
+
+                      <TableCell className="font-mono text-xs">{codigo}</TableCell>
+
+                      <TableCell>{cargo}</TableCell>
+
+                      <TableCell>{situacao}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section> */}
 
       <Dialog
         open={aberto}
