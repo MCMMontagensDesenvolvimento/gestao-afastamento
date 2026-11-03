@@ -8,7 +8,7 @@ import type {
 const TOKEN_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 60_000;
 const TOKEN_EXPIRY_BUFFER_MS = 30_000;
-const DEFAULT_WITH = "cargo,maoObra,folha,situacao,centroCusto";
+const DEFAULT_WITH = "cargo,maoObra,folha,situacao,centroCusto,situacoes";
 
 export class ApdataClient {
   private readonly baseUrl = env.APDATA_BASE_URL!.replace(/\/+$/, "");
@@ -179,7 +179,6 @@ export class ApdataClient {
     if (!userIdBaseSigob.trim()) {
       throw new Error("O user-id do SIGOB é obrigatório.");
     }
-
     const endpoint = apenasAtivos
       ? "contratados/afastados-com-historico"
       : "contratados";
@@ -211,7 +210,7 @@ export class ApdataClient {
       if (!body || !Array.isArray(body.data)) {
         throw new Error("Formato de resposta inesperado do APDATA.");
       }
-
+     
       resultado.push(...body.data);
 
       if (body.next_page_url === null) {

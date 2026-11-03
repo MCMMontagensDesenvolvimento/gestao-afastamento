@@ -138,8 +138,9 @@ export class EmployeesRepository {
     let atualizados = 0;
     let ignorados = 0;
     let situacoesCriadas = 0;
+    let funcoesCriadas = 0;
+    let funcoesSemNome = 0;
 
-    // Os caches reduzem consultas repetidas entre registros e lotes.
     const obrasPorCodigo = new Map<string, string>();
     const obrasPorNome = new Map<string, string>();
     const funcoesPorCodigo = new Map<string, string>();
@@ -160,7 +161,6 @@ export class EmployeesRepository {
         lote: numeroLote,
         totalLotes,
         registrosNoLote: lote.length,
-        processadosAnteriormente: offset,
         totalRegistros: registros.length,
       });
 
@@ -171,23 +171,24 @@ export class EmployeesRepository {
             let loteAtualizados = 0;
             let loteIgnorados = 0;
             let loteSituacoesCriadas = 0;
+            let loteFuncoesCriadas = 0;
+            let loteFuncoesSemNome = 0;
 
             for (const registro of lote) {
               const contratadoId = campo(registro, "CON_CdiContratado");
-              const nome = campo(registro, "CON_DssNome");
+              const nomeColaborador = campo(registro, "CON_DssNome");
 
-              if (!contratadoId) {
+              if (!contratadoId || !nomeColaborador) {
                 loteIgnorados++;
 
-                console.warn("[APDATA SYNC] Registro sem identificador", {
-                  nome: nome ?? "(vazio)",
+                console.warn("[APDATA SYNC] Registro sem dados obrigatórios", {
+                  contratadoId,
+                  nome: nomeColaborador,
                   lote: numeroLote,
                 });
 
                 continue;
               }
-
-              const nomeColaborador = nome ?? "";
 
               const centroCustoId = campo(registro, "CON_CdiCentroCusto");
 
@@ -195,107 +196,301 @@ export class EmployeesRepository {
                 campoAninhado(registro, "centro_custo", "CCU_D1sCentroCusto") ??
                 campo(registro, "CCU_D1sCentroCusto");
 
-              const cargoId =
+              const codigoCargo =
                 campo(registro, "CON_CdiCargo") ??
                 campoAninhado(registro, "cargo", "CAR_CdiCargo");
 
-              const cargoNome = campoAninhado(
-                registro,
-                "cargo",
-                "CAR_D1sCargo",
-              );
+              const nomeCargo =
+                campoAninhado(registro, "cargo", "CAR_D1sCargo") ??
+                campo(registro, "CAR_D1sCargo");
 
               const situacaoId = campo(registro, "CON_CdiSituacao");
 
               const situacaoNome =
-                (
-                  campoAninhado(registro, "situacao", "SIT_D1sSituacao") ??
-                  campo(registro, "SIT_D1sSituacao")
-                )?.trim() || null;
+                campoAninhado(registro, "situacao", "SIT_D1sSituacao") ??
+                campo(registro, "SIT_D1sSituacao");
 
+              const email =
+                campo(registro, "CON_CosEMail") ??
+                campo(registro, "CON_CosEMailPessoal");
+
+              /*
+               * Procura o colaborador antes de resolver os relacionamentos.
+               * Assim, quando um cargo não puder ser resolvido, o update
+               * poderá preservar o funcaoId que já estiver cadastrado.
+               */
+              const existente = await tx.colaborador.findUnique({
+                where: {
+                  apdataContratadoId: contratadoId,
+                },
+              });
+
+              /*
+               * 1. Resolver ou cadastrar a obra.
+               */
               let obraId: string | null = null;
 
-              if (centroCustoId && centroCustoNome) {
-                obraId =
-                  obrasPorCodigo.get(centroCustoId) ??
-                  obrasPorNome.get(centroCustoNome) ??
-                  null;
+              const codigoCentroCusto = centroCustoId?.trim() || null;
+              const nomeCentroCusto = centroCustoNome?.trim() || null;
+
+              if (codigoCentroCusto) {
+                obraId = obrasPorCodigo.get(codigoCentroCusto) ?? null;
 
                 if (!obraId) {
                   let obra = await tx.obra.findUnique({
                     where: {
-                      apdataCentroCustoId: centroCustoId,
+                      apdataCentroCustoId: codigoCentroCusto,
                     },
                   });
 
-                  if (!obra) {
-                    obra = await tx.obra.findUnique({
-                      where: { nome: centroCustoNome },
-                    });
-                  }
-
-                  if (!obra) {
-                    obra = await tx.obra.create({
-                      data: {
-                        nome: centroCustoNome,
-                        apdataCentroCustoId: centroCustoId,
+                  if (!obra && nomeCentroCusto) {
+                    obra = await tx.obra.findFirst({
+                      where: {
+                        nome: {
+                          equals: nomeCentroCusto,
+                          mode: "insensitive",
+                        },
                       },
                     });
                   }
 
-                  obraId = obra.id;
+                  if (obra) {
+                    /*
+                     * Só associa o código se a obra ainda não possuir
+                     * outro código da APDATA.
+                     */
+                    if (!obra.apdataCentroCustoId) {
+                      obra = await tx.obra.update({
+                        where: { id: obra.id },
+                        data: {
+                          apdataCentroCustoId: codigoCentroCusto,
+                        },
+                      });
+                    } else if (obra.apdataCentroCustoId !== codigoCentroCusto) {
+                      console.warn(
+                        "[APDATA SYNC] Obra encontrada pelo nome com outro código",
+                        {
+                          nomeCentroCusto,
+                          codigoRecebido: codigoCentroCusto,
+                          codigoCadastrado: obra.apdataCentroCustoId,
+                        },
+                      );
+                    }
+                  } else if (nomeCentroCusto) {
+                    obra = await tx.obra.create({
+                      data: {
+                        nome: nomeCentroCusto,
+                        apdataCentroCustoId: codigoCentroCusto,
+                      },
+                    });
+                  }
+
+                  obraId = obra?.id ?? null;
                 }
 
-                obrasPorCodigo.set(centroCustoId, obraId);
-                obrasPorNome.set(centroCustoNome, obraId);
+                if (obraId) {
+                  obrasPorCodigo.set(codigoCentroCusto, obraId);
+
+                  if (nomeCentroCusto) {
+                    obrasPorNome.set(
+                      nomeCentroCusto.toLocaleLowerCase("pt-BR"),
+                      obraId,
+                    );
+                  }
+                }
+              } else if (nomeCentroCusto) {
+                const chaveNomeObra =
+                  nomeCentroCusto.toLocaleLowerCase("pt-BR");
+
+                obraId = obrasPorNome.get(chaveNomeObra) ?? null;
+
+                if (!obraId) {
+                  const obra = await tx.obra.findFirst({
+                    where: {
+                      nome: {
+                        equals: nomeCentroCusto,
+                        mode: "insensitive",
+                      },
+                    },
+                  });
+
+                  obraId = obra?.id ?? null;
+
+                  if (obraId) {
+                    obrasPorNome.set(chaveNomeObra, obraId);
+                  }
+                }
               }
 
+              /*
+               * 2. Resolver ou cadastrar a função.
+               *
+               * O código da APDATA tem prioridade. O nome é usado como
+               * alternativa quando a função ainda não está mapeada.
+               */
               let funcaoId: string | null = null;
 
-              if (cargoId && cargoNome) {
-                funcaoId =
-                  funcoesPorCodigo.get(cargoId) ??
-                  funcoesPorNome.get(cargoNome.trim()) ??
-                  null;
+              const codigoCargoNormalizado = codigoCargo?.trim() || null;
+              const nomeCargoNormalizado = nomeCargo?.trim() || null;
+
+              const chaveNomeFuncao =
+                nomeCargoNormalizado?.toLocaleLowerCase("pt-BR") ?? null;
+
+              if (codigoCargoNormalizado) {
+                funcaoId = funcoesPorCodigo.get(codigoCargoNormalizado) ?? null;
 
                 if (!funcaoId) {
                   let funcao = await tx.funcao.findUnique({
-                    where: { apdataCargoId: cargoId },
+                    where: {
+                      apdataCargoId: codigoCargoNormalizado,
+                    },
                   });
 
-                  if (!funcao) {
+                  if (!funcao && nomeCargoNormalizado) {
                     funcao = await tx.funcao.findFirst({
-                      where: { nome: cargoNome.trim() },
-                    });
-                  }
-
-                  if (!funcao) {
-                    funcao = await tx.funcao.create({
-                      data: {
-                        nome: cargoNome.trim(),
-                        apdataCargoId: cargoId,
+                      where: {
+                        nome: {
+                          equals: nomeCargoNormalizado,
+                          mode: "insensitive",
+                        },
                       },
                     });
                   }
 
-                  funcaoId = funcao.id;
+                  if (funcao) {
+                    /*
+                     * Recupera uma função existente pelo nome e associa
+                     * o código se ela ainda não tiver código APDATA.
+                     */
+                    if (!funcao.apdataCargoId) {
+                      funcao = await tx.funcao.update({
+                        where: { id: funcao.id },
+                        data: {
+                          apdataCargoId: codigoCargoNormalizado,
+                        },
+                      });
+                    } else if (
+                      funcao.apdataCargoId !== codigoCargoNormalizado
+                    ) {
+                      /*
+                       * O nome já existe, mas está associado a outro
+                       * código. Como o nome é único no banco, não criamos
+                       * outra função com o mesmo nome nem sobrescrevemos
+                       * o código já cadastrado.
+                       */
+                      console.warn(
+                        "[APDATA SYNC] Nome de função associado a outro código",
+                        {
+                          codigoRecebido: codigoCargoNormalizado,
+                          codigoCadastrado: funcao.apdataCargoId,
+                          nomeCargo: nomeCargoNormalizado,
+                        },
+                      );
+                    }
+                  } else if (nomeCargoNormalizado) {
+                    funcao = await tx.funcao.create({
+                      data: {
+                        nome: nomeCargoNormalizado,
+                        apdataCargoId: codigoCargoNormalizado,
+                        ativo: true,
+                      },
+                    });
+
+                    loteFuncoesCriadas++;
+
+                    console.info("[APDATA SYNC] Função criada", {
+                      id: funcao.id,
+                      codigoCargo: codigoCargoNormalizado,
+                      nomeCargo: nomeCargoNormalizado,
+                    });
+                  }
+
+                  funcaoId = funcao?.id ?? null;
                 }
 
-                funcoesPorCodigo.set(cargoId, funcaoId);
-                funcoesPorNome.set(cargoNome.trim(), funcaoId);
+                if (funcaoId) {
+                  funcoesPorCodigo.set(codigoCargoNormalizado, funcaoId);
+
+                  if (chaveNomeFuncao) {
+                    funcoesPorNome.set(chaveNomeFuncao, funcaoId);
+                  }
+                } else if (!nomeCargoNormalizado) {
+                  loteFuncoesSemNome++;
+
+                  console.warn(
+                    "[APDATA SYNC] Cargo sem nome e sem função cadastrada",
+                    {
+                      contratadoId,
+                      codigoCargo: codigoCargoNormalizado,
+                    },
+                  );
+                }
+              } else if (nomeCargoNormalizado && chaveNomeFuncao) {
+                /*
+                 * Fallback: o registro não contém código de cargo.
+                 */
+                funcaoId = funcoesPorNome.get(chaveNomeFuncao) ?? null;
+
+                if (!funcaoId) {
+                  const funcao = await tx.funcao.findFirst({
+                    where: {
+                      nome: {
+                        equals: nomeCargoNormalizado,
+                        mode: "insensitive",
+                      },
+                    },
+                  });
+
+                  if (funcao) {
+                    funcaoId = funcao.id;
+                  } else {
+                    const novaFuncao = await tx.funcao.create({
+                      data: {
+                        nome: nomeCargoNormalizado,
+                        ativo: true,
+                      },
+                    });
+
+                    funcaoId = novaFuncao.id;
+                    loteFuncoesCriadas++;
+
+                    console.info(
+                      "[APDATA SYNC] Função criada sem código APDATA",
+                      {
+                        id: novaFuncao.id,
+                        nomeCargo: nomeCargoNormalizado,
+                      },
+                    );
+                  }
+
+                  funcoesPorNome.set(chaveNomeFuncao, funcaoId);
+                }
+              } else if (!nomeCargoNormalizado) {
+                /*
+                 * Se a função não foi localizada pelo código e o nome
+                 * está ausente, não criamos um registro incompleto.
+                 * O colaborador existente manterá o funcaoId atual.
+                 */
+                loteFuncoesSemNome++;
+
+                console.warn("[APDATA SYNC] Cargo sem nome", {
+                  contratadoId,
+                  codigoCargo: codigoCargoNormalizado,
+                });
               }
 
+              /*
+               * 3. Cadastrar a situação, se houver nome.
+               */
               if (situacaoNome) {
-                const nomeNormalizado = situacaoNome.trim();
-                const chaveSituacao =
-                  nomeNormalizado.toLocaleLowerCase("pt-BR");
+                const chaveSituacao = situacaoNome.toLocaleLowerCase("pt-BR");
 
                 if (!situacoesConhecidas.has(chaveSituacao)) {
                   const existenteSituacao =
                     await tx.situacaoAfastamento.findFirst({
                       where: {
                         nome: {
-                          equals: nomeNormalizado,
+                          equals: situacaoNome,
                           mode: "insensitive",
                         },
                       },
@@ -304,7 +499,7 @@ export class EmployeesRepository {
                   if (!existenteSituacao) {
                     const novaSituacao = await tx.situacaoAfastamento.create({
                       data: {
-                        nome: nomeNormalizado,
+                        nome: situacaoNome,
                         classificacao: "ATIVO",
                         ativo: true,
                       },
@@ -312,10 +507,10 @@ export class EmployeesRepository {
 
                     loteSituacoesCriadas++;
 
-                    console.info("[APDATA SYNC] Situação criada:", {
+                    console.info("[APDATA SYNC] Situação criada", {
+                      id: novaSituacao.id,
                       codigo: situacaoId,
                       nome: novaSituacao.nome,
-                      id: novaSituacao.id,
                     });
                   }
 
@@ -323,23 +518,26 @@ export class EmployeesRepository {
                 }
               }
 
-              const email =
-                campo(registro, "CON_CosEMail") ??
-                campo(registro, "CON_CosEMailPessoal");
-
-              const dados = {
+              /*
+               * 4. Montar os dados sem sobrescrever campos ausentes.
+               *
+               * O spread condicional é importante: se a APDATA não
+               * retornar uma obra, função, e-mail ou situação, o valor
+               * atual do colaborador não será apagado.
+               */
+              const dados: Prisma.ColaboradorUpdateInput = {
                 nome: nomeColaborador,
-                contato: email,
-                obraId,
-                funcaoId,
-                apdataSituacaoId: situacaoId,
-                apdataSituacaoNome: situacaoNome,
                 sourceSystem: "APDATA",
+                ...(email !== null ? { contato: email } : {}),
+                ...(situacaoId !== null
+                  ? { apdataSituacaoId: situacaoId }
+                  : {}),
+                ...(situacaoNome !== null
+                  ? { apdataSituacaoNome: situacaoNome }
+                  : {}),
+                ...(obraId ? { obra: { connect: { id: obraId } } } : {}),
+                ...(funcaoId ? { funcao: { connect: { id: funcaoId } } } : {}),
               };
-
-              const existente = await tx.colaborador.findUnique({
-                where: { apdataContratadoId: contratadoId },
-              });
 
               if (existente) {
                 await tx.colaborador.update({
@@ -351,6 +549,10 @@ export class EmployeesRepository {
                 continue;
               }
 
+              /*
+               * 5. Compatibilidade com colaboradores que já estavam
+               * cadastrados usando o código corporativo APDATA-<id>.
+               */
               const codigoCorporativo = `APDATA-${contratadoId}`;
 
               const existentePorCodigo = await tx.colaborador.findUnique({
@@ -370,10 +572,20 @@ export class EmployeesRepository {
               } else {
                 await tx.colaborador.create({
                   data: {
-                    ...dados,
-                    apdataContratadoId: contratadoId,
                     codigoCorporativo,
+                    apdataContratadoId: contratadoId,
+                    nome: nomeColaborador,
+                    sourceSystem: "APDATA",
                     ativo: true,
+                    ...(email !== null ? { contato: email } : {}),
+                    ...(situacaoId !== null
+                      ? { apdataSituacaoId: situacaoId }
+                      : {}),
+                    ...(situacaoNome !== null
+                      ? { apdataSituacaoNome: situacaoNome }
+                      : {}),
+                    ...(obraId ? { obraId } : {}),
+                    ...(funcaoId ? { funcaoId } : {}),
                   },
                 });
 
@@ -386,6 +598,8 @@ export class EmployeesRepository {
               atualizados: loteAtualizados,
               ignorados: loteIgnorados,
               situacoesCriadas: loteSituacoesCriadas,
+              funcoesCriadas: loteFuncoesCriadas,
+              funcoesSemNome: loteFuncoesSemNome,
             };
           },
           {
@@ -394,11 +608,15 @@ export class EmployeesRepository {
           },
         );
 
-        // Somar apenas depois de a transação do lote ser confirmada.
+        /*
+         * Contabiliza apenas os lotes confirmados pelo banco.
+         */
         criados += resultadoLote.criados;
         atualizados += resultadoLote.atualizados;
         ignorados += resultadoLote.ignorados;
         situacoesCriadas += resultadoLote.situacoesCriadas;
+        funcoesCriadas += resultadoLote.funcoesCriadas;
+        funcoesSemNome += resultadoLote.funcoesSemNome;
 
         console.info("[APDATA SYNC] Lote concluído", {
           lote: numeroLote,
@@ -436,6 +654,8 @@ export class EmployeesRepository {
       atualizados,
       ignorados,
       situacoesCriadas,
+      funcoesCriadas,
+      funcoesSemNome,
     };
 
     console.info("[APDATA SYNC] Sincronização concluída", resultado);

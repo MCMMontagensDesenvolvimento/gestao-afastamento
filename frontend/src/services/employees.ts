@@ -50,13 +50,28 @@ function mapEmployee(item: EmployeeDto): Colaborador {
   };
 }
 
-
 export async function listEmployees(params: Params = {}): Promise<Page<Colaborador>> {
   const response = await api<Page<EmployeeDto>>(withParams("/colaboradores", params));
   return { ...response, data: response.data.map(mapEmployee) };
 }
 
-export type ApdataContratado = Record<string, unknown>;
+export type ApdataSituacao = {
+  CST_CdiContratado: string;
+  CST_DtdSituacaoInicio: string;
+  CST_DtdSituacaoFim: string | null;
+  CST_CdiSituacao: string;
+  situacao?: {
+    SIT_CdiSituacao: number;
+    SIT_D1sSituacao: string;
+  };
+};
+
+export type ApdataContratado = {
+  CON_CdiContratado: number;
+  CON_DssNome: string;
+  CON_NusCICNumero: string;
+  situacoes: ApdataSituacao[];
+};
 
 export async function listarContratadosApdata(
   ativos = true,
@@ -66,14 +81,10 @@ export async function listarContratadosApdata(
   );
 }
 
-
 export async function sincronizarContratadosApdata() {
-  return api<{ data?: unknown; message?: string }>(
-    "/colaboradores/apdata/sincronizar",
-    {
-      method: "POST",
-    },
-  );
+  return api<{ data?: unknown; message?: string }>("/colaboradores/apdata/sincronizar", {
+    method: "POST",
+  });
 }
 
 export async function sincronizarAfastamentosApdata() {

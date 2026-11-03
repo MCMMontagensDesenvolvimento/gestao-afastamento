@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { employeesPageQuery } from "@/hooks/use-employees";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { History, Loader2, Pencil, Plus, Power } from "lucide-react";
@@ -6,7 +7,6 @@ import { toast } from "sonner";
 
 import { useAuth } from "@/lib/auth/session";
 import { useServerPagination } from "@/hooks/use-server-pagination";
-import { employeesPageQuery, employeeHistoryQuery } from "@/hooks/use-employees";
 import { configQuery } from "@/hooks/use-catalogs";
 import {
   createEmployee,
@@ -121,6 +121,24 @@ function textoApdata(valor: unknown): string {
   return "—";
 }
 
+type SituacaoApdata = {
+  CST_CdiContratado: string;
+  CST_DtdSituacaoInicio: string;
+  CST_DtdSituacaoFim: string | null;
+  CST_CdiSituacao: string;
+  situacao?: {
+    SIT_CdiSituacao: number;
+    SIT_D1sSituacao: string;
+  };
+};
+
+type ContratadoApdata = {
+  CON_NusCICNumero: string;
+  CON_CdiContratado: number | string;
+  CON_DssNome: string;
+  situacoes?: SituacaoApdata[];
+};
+
 function PaginaColaboradores() {
   const queryClient = useQueryClient();
 
@@ -164,6 +182,34 @@ function PaginaColaboradores() {
     enabled: can("employees.read"),
   });
 
+  const respostaApdata: unknown = apdataQuery.data;
+
+  const contratadosApdata: ContratadoApdata[] = (() => {
+    const resposta = respostaApdata as
+      ContratadoApdata[] | { data?: ContratadoApdata[] } | null | undefined;
+
+    if (Array.isArray(resposta)) return resposta;
+
+    if (resposta && "data" in resposta && Array.isArray(resposta.data)) {
+      return resposta.data;
+    }
+
+    return [];
+  })();
+
+  const normalizarNome = (nome: string) =>
+    nome
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const colaboradorApdata = historico
+    ? contratadosApdata.find(
+        (item) => normalizarNome(item.CON_DssNome) === normalizarNome(historico.nome),
+      )
+    : undefined;
+ 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     ...employeesPageQuery({
       page: pagination.pagina,
@@ -649,80 +695,106 @@ function PaginaColaboradores() {
           confirmar && alternarAtivo.mutate(confirmar, { onSuccess: () => setConfirmar(null) })
         }
       />
-      {historico ? (
-        <HistoricoColaborador colaborador={historico} aoFechar={() => setHistorico(null)} />
-      ) : null}
+      {historico && (
+        <HistoricoColaborador
+          colaborador={historico}
+          situacoes={colaboradorApdata?.situacoes ?? []}
+          carregando={apdataQuery.isLoading}
+          erro={apdataQuery.error}
+          aoTentarNovamente={() => apdataQuery.refetch()}
+          aoFechar={() => setHistorico(null)}
+        />
+      )}
     </AppLayout>
   );
 }
 
 function HistoricoColaborador({
   colaborador,
+  situacoes,
+  carregando,
+  erro,
+  aoTentarNovamente,
   aoFechar,
 }: {
   colaborador: Colaborador;
+  situacoes: SituacaoApdata[];
+  carregando: boolean;
+  erro: Error | null;
+  aoTentarNovamente: () => void;
   aoFechar: () => void;
 }) {
-  const pagination = useServerPagination();
-  const query = useQuery(
-    employeeHistoryQuery(colaborador.id, { page: pagination.pagina, perPage: pagination.tamanho }),
+  function dataApdata(data: string | null) {
+    if (!data) return "Atual";
+
+    const dataParte = data.split(" ")[0];
+
+    if (!dataParte) return "Data inválida";
+
+    const partes = dataParte.split("-");
+
+    if (partes.length !== 3) return "Data inválida";
+
+    const [ano, mes, dia] = partes;
+
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  const historicoOrdenado = [...situacoes].sort((a, b) =>
+    b.CST_DtdSituacaoInicio.localeCompare(a.CST_DtdSituacaoInicio),
   );
+
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) aoFechar();
-      }}
-    >
+    <Dialog open onOpenChange={(open) => !open && aoFechar()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Histórico — {colaborador.nome}</DialogTitle>
+          <DialogTitle>Histórico de situações — {colaborador.nome}</DialogTitle>
         </DialogHeader>
-        {query.isLoading ? (
+
+        {carregando ? (
           <TabelaSkeleton />
-        ) : query.isError ? (
-          <EstadoErro
-            mensagem={mensagemAmigavel(query.error)}
-            aoTentarNovamente={() => query.refetch()}
+        ) : erro ? (
+          <EstadoErro mensagem={mensagemAmigavel(erro)} aoTentarNovamente={aoTentarNovamente} />
+        ) : historicoOrdenado.length === 0 ? (
+          <EstadoVazio
+            titulo="Nenhum histórico encontrado."
+            descricao="Não foram encontradas situações deste colaborador no APDATA."
           />
-        ) : !query.data?.data.length ? (
-          <EstadoVazio titulo="Nenhum afastamento registrado." />
         ) : (
-          <>
-            <ul className="divide-y divide-border">
-              {query.data.data.map((item) => (
-                <li key={item.id} className="space-y-2 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">
-                        Afastamento em {formatarData(item.dataAfastamento)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {item.obra.nome} · {item.funcao.nome}
-                      </p>
-                    </div>
-                    <Button asChild variant="outline" size="sm">
-                      <Link to="/afastamentos/$id" params={{ id: item.id }}>
-                        Ver detalhe
-                      </Link>
-                    </Button>
-                  </div>
-                  <p className="text-sm">
-                    {item.situacao.nome} · {item.tipoBeneficio?.nome ?? "Sem benefício informado"}
+          <ol className="relative ml-2 space-y-4 border-l-2 border-border pl-5">
+            {historicoOrdenado.map((item, index) => (
+              <li
+                key={`${item.CST_CdiSituacao}-${item.CST_DtdSituacaoInicio}-${index}`}
+                className="relative rounded-md border border-border bg-card p-4"
+              >
+                <span className="absolute -left-[27px] top-5 size-3 rounded-full border-2 border-primary bg-background" />
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-sm">
+                    {item.situacao?.SIT_D1sSituacao ?? "Situação não identificada"}
+                  </strong>
+
+                  {!item.CST_DtdSituacaoFim && (
+                    <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                      Atual
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+                  <p>
+                    <strong className="text-foreground">Data de início:</strong>{" "}
+                    {dataApdata(item.CST_DtdSituacaoInicio)}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Retorno previsto: {formatarData(item.dataRetornoPrevista)} · Efetivo:{" "}
-                    {formatarData(item.dataRetornoEfetiva)}
+
+                  <p>
+                    <strong className="text-foreground">Data de término:</strong>{" "}
+                    {dataApdata(item.CST_DtdSituacaoFim)}
                   </p>
-                </li>
-              ))}
-            </ul>
-            <Paginacao
-              {...pagination}
-              total={query.data.meta.total}
-              totalPaginas={query.data.meta.totalPages}
-            />
-          </>
+                </div>
+              </li>
+            ))}
+          </ol>
         )}
       </DialogContent>
     </Dialog>

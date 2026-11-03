@@ -1,3 +1,4 @@
+
 import { ApdataClient } from "./apdata.client.js";
 import type {
   ApdataContratado,
@@ -12,32 +13,21 @@ export class ApdataService {
   ): Promise<ApdataContratado[]> {
     return this.client.listarContratados(
       options.userIdBaseSigob,
-      options.apenasAtivos ?? true,
+      options.apenasAtivos ?? false,
     );
   }
 
-  async listarAtivos(userIdBaseSigob: string): Promise<ApdataContratado[]> {
-    return this.listarContratados({
-      userIdBaseSigob,
-      apenasAtivos: true,
-    });
-  }
-
+  // Busca todos os colaboradores.
   async listarTodos(userIdBaseSigob: string): Promise<ApdataContratado[]> {
-    return this.listarContratados({
-      userIdBaseSigob,
-      apenasAtivos: false,
-    });
-  }
-  
-  async listarAfastados(userIdBaseSigob: string): Promise<ApdataContratado[]> {
-    return this.listarContratados({
-      userIdBaseSigob,
-      apenasAtivos: true,
-    });
+    return this.client.listarContratados(userIdBaseSigob, false);
   }
 
-  
+  // Busca somente os registros do endpoint de afastados com histórico.
+  async listarAfastadosComHistorico(
+    userIdBaseSigob: string,
+  ): Promise<ApdataContratado[]> {
+    return this.client.listarContratados(userIdBaseSigob, true);
+  }
 }
 
 export const apdataService = new ApdataService();

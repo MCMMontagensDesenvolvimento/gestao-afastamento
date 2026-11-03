@@ -45,8 +45,7 @@ export class ApdataSyncService {
   }
 
   async sincronizarAfastamentos(userId: string, requestId: string) {
-    const registros = await this.apdata.listarTodos(userId);
-
+    const registros = await this.apdata.listarAfastadosComHistorico(userId);
     const distribuicao = registros.reduce<Record<string, number>>(
       (acc, registro) => {
         const codigo = obterDadosSituacao(registro).codigo ?? "(vazio)";
@@ -172,21 +171,32 @@ export class ApdataSyncService {
         continue;
       }
 
-      const codigoCargoApdata = textoCampo(registro, "CON_CdiCargo");
+      const { codigo: codigoCargoApdata, nome: nomeCargoApdata } =
+        obterDadosCargo(registro);
 
       let funcaoId = colaborador.funcaoId;
 
-      if (!funcaoId && codigoCargoApdata) {
+      // Busca a função pelo código da APDATA.
+      if (codigoCargoApdata) {
         const funcao = await prisma.funcao.findUnique({
           where: {
             apdataCargoId: codigoCargoApdata,
           },
           select: {
             id: true,
+            nome: true,
           },
         });
 
-        funcaoId = funcao?.id ?? null;
+        if (funcao) {
+          funcaoId = funcao.id;
+        } else {
+          console.warn("[APDATA AFASTAMENTOS] Função não encontrada:", {
+            contratadoId,
+            codigoCargoApdata,
+            nomeCargoApdata,
+          });
+        }
       }
 
       if (!colaborador.obraId) {
@@ -217,10 +227,24 @@ export class ApdataSyncService {
         continue;
       }
 
-      const agora = new Date();
-      const hoje = new Date(
-        Date.UTC(agora.getFullYear(), agora.getMonth(), agora.getDate()),
+      const situacoesApdata = registro["situacoes"];
+      
+      const { dataInicio: dataInicioApdata, dataFim: dataFimApdata } =
+        obterDatasSituacao(registro);
+
+      if (!dataInicioApdata) {
+        console.warn("[APDATA AFASTAMENTOS] Sem data de início:", contratadoId);
+        ignorados++;
+        continue;
+      }
+
+      const dataAfastamento = new Date(
+        `${dataInicioApdata.split(" ")[0]}T00:00:00.000Z`,
       );
+
+      const dataFimBeneficio = dataFimApdata
+        ? new Date(`${dataFimApdata.split(" ")[0]}T00:00:00.000Z`)
+        : null;
 
       await prisma.afastamento.create({
         data: {
@@ -228,9 +252,9 @@ export class ApdataSyncService {
           obraId: colaborador.obraId,
           funcaoId: funcaoId ?? null,
           situacaoId: situacaoAfastamento.id,
-          dataAfastamento: hoje,
+          dataAfastamento,
           createdById: userId,
-          dataFimBeneficio: null,
+          dataFimBeneficio,
           dataRetornoPrevista: null,
           dataRetornoEfetiva: null,
           tipoBeneficioId: null,
@@ -295,6 +319,29 @@ function obterDadosSituacao(registro: RegistroApdata): DadosSituacao {
   };
 }
 
+type DadosDatasSituacao = {
+  dataInicio: string | null;
+  dataFim: string | null;
+};
+
+function obterDatasSituacao(registro: RegistroApdata): DadosDatasSituacao {
+  const situacoes = registro["situacoes"];
+
+  if (!Array.isArray(situacoes) || situacoes.length === 0) {
+    return {
+      dataInicio: null,
+      dataFim: null,
+    };
+  }
+
+  const primeiraSituacao = situacoes[0] as RegistroApdata;
+
+  return {
+    dataInicio: textoCampo(primeiraSituacao, "CST_DtdSituacaoInicio"),
+    dataFim: textoCampo(primeiraSituacao, "CST_DtdSituacaoFim"),
+  };
+}
+
 function textoCampo(registro: RegistroApdata, chave: string): string | null {
   const valor = registro[chave];
 
@@ -305,4 +352,26 @@ function textoCampo(registro: RegistroApdata, chave: string): string | null {
   const texto = String(valor).trim();
 
   return texto || null;
+}
+
+type DadosCargo = {
+  codigo: string | null;
+  nome: string | null;
+};
+
+function obterDadosCargo(registro: RegistroApdata): DadosCargo {
+  const cargo = registro["cargo"];
+
+  const dadosCargo =
+    cargo !== null && typeof cargo === "object" && !Array.isArray(cargo)
+      ? (cargo as RegistroApdata)
+      : {};
+
+  return {
+    codigo:
+      textoCampo(registro, "CON_CdiCargo") ??
+      textoCampo(dadosCargo, "CAR_CdiCargo"),
+
+    nome: textoCampo(dadosCargo, "CAR_D1sCargo"),
+  };
 }
