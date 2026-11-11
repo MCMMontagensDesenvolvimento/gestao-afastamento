@@ -1,12 +1,16 @@
-
 import { ApdataClient } from "./apdata.client.js";
 import type {
+  ApdataCargo,
   ApdataContratado,
   ApdataListarContratadosOptions,
 } from "./apdata.schema.js";
 
 export class ApdataService {
   constructor(private readonly client = new ApdataClient()) {}
+
+  async listarCargos(userIdBaseSigob: string): Promise<ApdataCargo[]> {
+    return this.client.listarCargos(userIdBaseSigob);
+  }
 
   async listarContratados(
     options: ApdataListarContratadosOptions,

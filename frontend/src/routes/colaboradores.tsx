@@ -447,8 +447,8 @@ function PaginaColaboradores() {
               <Table containerClassName={TABELA_CONTAINER}>
                 <TableHeader className={CABECALHO_FIXO}>
                   <TableRow>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Nome</TableHead>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Colaborador</TableHead>
                     <TableHead className="hidden lg:table-cell">Contato</TableHead>
                     <TableHead>Obra</TableHead>
                     <TableHead className="hidden lg:table-cell">Função</TableHead>

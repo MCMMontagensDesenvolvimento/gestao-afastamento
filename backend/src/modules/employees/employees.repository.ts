@@ -20,6 +20,13 @@ export interface EmployeeListInput {
   sortDirection: "asc" | "desc";
 }
 
+type ApdataRecord = Record<string, unknown>;
+
+type DadosCargo = {
+  codigo: string | null;
+  nome: string | null;
+};
+
 export class EmployeesRepository {
   async list(input: EmployeeListInput) {
     const where: Prisma.ColaboradorWhereInput = {
@@ -147,6 +154,42 @@ export class EmployeesRepository {
     const funcoesPorNome = new Map<string, string>();
     const situacoesConhecidas = new Set<string>();
 
+    /*
+     * Diagnóstico dos cargos recebidos.
+     * Executado apenas uma vez, antes dos lotes.
+     */
+    const cargosRecebidos = new Map<string, string>();
+
+    let registrosSemObjetoCargo = 0;
+    let registrosSemNomeCargo = 0;
+
+    for (const registro of registros) {
+      const { codigo, nome } = obterDadosCargo(registro);
+      const cargo = registro["cargo"];
+
+      if (cargo === null || typeof cargo !== "object" || Array.isArray(cargo)) {
+        registrosSemObjetoCargo++;
+      }
+
+      if (!codigo || !nome) {
+        registrosSemNomeCargo++;
+        continue;
+      }
+
+      cargosRecebidos.set(codigo, nome);
+    }
+
+    console.info("[APDATA CARGOS] Diagnóstico:", {
+      totalContratados: registros.length,
+      totalCargosDiferentes: cargosRecebidos.size,
+      registrosSemObjetoCargo,
+      registrosSemNomeCargo,
+      cargos: Array.from(cargosRecebidos.entries()).map(([codigo, nome]) => ({
+        codigo,
+        nome,
+      })),
+    });
+
     const totalLotes = Math.ceil(registros.length / APDATA_BATCH_SIZE);
 
     for (
@@ -196,13 +239,13 @@ export class EmployeesRepository {
                 campoAninhado(registro, "centro_custo", "CCU_D1sCentroCusto") ??
                 campo(registro, "CCU_D1sCentroCusto");
 
-              const codigoCargo =
-                campo(registro, "CON_CdiCargo") ??
-                campoAninhado(registro, "cargo", "CAR_CdiCargo");
-
-              const nomeCargo =
-                campoAninhado(registro, "cargo", "CAR_D1sCargo") ??
-                campo(registro, "CAR_D1sCargo");
+              /*
+               * Extração do cargo:
+               * primeiro tenta o objeto cargo;
+               * depois os campos na raiz.
+               */
+              const { codigo: codigoCargo, nome: nomeCargo } =
+                obterDadosCargo(registro);
 
               const situacaoId = campo(registro, "CON_CdiSituacao");
 
@@ -216,8 +259,6 @@ export class EmployeesRepository {
 
               /*
                * Procura o colaborador antes de resolver os relacionamentos.
-               * Assim, quando um cargo não puder ser resolvido, o update
-               * poderá preservar o funcaoId que já estiver cadastrado.
                */
               const existente = await tx.colaborador.findUnique({
                 where: {
@@ -255,10 +296,6 @@ export class EmployeesRepository {
                   }
 
                   if (obra) {
-                    /*
-                     * Só associa o código se a obra ainda não possuir
-                     * outro código da APDATA.
-                     */
                     if (!obra.apdataCentroCustoId) {
                       obra = await tx.obra.update({
                         where: { id: obra.id },
@@ -321,17 +358,15 @@ export class EmployeesRepository {
                   }
                 }
               }
-
+             
               /*
                * 2. Resolver ou cadastrar a função.
-               *
-               * O código da APDATA tem prioridade. O nome é usado como
-               * alternativa quando a função ainda não está mapeada.
                */
               let funcaoId: string | null = null;
 
               const codigoCargoNormalizado = codigoCargo?.trim() || null;
-              const nomeCargoNormalizado = nomeCargo?.trim() || null;
+              const nomeCargoNormalizado =
+                nomeCargo?.trim().replace(/\s+/g, " ") || null;
 
               const chaveNomeFuncao =
                 nomeCargoNormalizado?.toLocaleLowerCase("pt-BR") ?? null;
@@ -347,7 +382,7 @@ export class EmployeesRepository {
                   });
 
                   if (!funcao && nomeCargoNormalizado) {
-                    funcao = await tx.funcao.findFirst({
+                    const funcaoPorNome = await tx.funcao.findFirst({
                       where: {
                         nome: {
                           equals: nomeCargoNormalizado,
@@ -355,39 +390,34 @@ export class EmployeesRepository {
                         },
                       },
                     });
+
+                    if (funcaoPorNome) {
+                      if (!funcaoPorNome.apdataCargoId) {
+                        funcao = await tx.funcao.update({
+                          where: { id: funcaoPorNome.id },
+                          data: {
+                            apdataCargoId: codigoCargoNormalizado,
+                          },
+                        });
+                      } else if (
+                        funcaoPorNome.apdataCargoId === codigoCargoNormalizado
+                      ) {
+                        funcao = funcaoPorNome;
+                      } else {
+                        console.error(
+                          "[APDATA SYNC] Conflito: função com mesmo nome e código diferente",
+                          {
+                            contratadoId,
+                            nomeCargo: nomeCargoNormalizado,
+                            codigoRecebido: codigoCargoNormalizado,
+                            codigoExistente: funcaoPorNome.apdataCargoId,
+                          },
+                        );
+                      }
+                    }
                   }
 
-                  if (funcao) {
-                    /*
-                     * Recupera uma função existente pelo nome e associa
-                     * o código se ela ainda não tiver código APDATA.
-                     */
-                    if (!funcao.apdataCargoId) {
-                      funcao = await tx.funcao.update({
-                        where: { id: funcao.id },
-                        data: {
-                          apdataCargoId: codigoCargoNormalizado,
-                        },
-                      });
-                    } else if (
-                      funcao.apdataCargoId !== codigoCargoNormalizado
-                    ) {
-                      /*
-                       * O nome já existe, mas está associado a outro
-                       * código. Como o nome é único no banco, não criamos
-                       * outra função com o mesmo nome nem sobrescrevemos
-                       * o código já cadastrado.
-                       */
-                      console.warn(
-                        "[APDATA SYNC] Nome de função associado a outro código",
-                        {
-                          codigoRecebido: codigoCargoNormalizado,
-                          codigoCadastrado: funcao.apdataCargoId,
-                          nomeCargo: nomeCargoNormalizado,
-                        },
-                      );
-                    }
-                  } else if (nomeCargoNormalizado) {
+                  if (!funcao && nomeCargoNormalizado) {
                     funcao = await tx.funcao.create({
                       data: {
                         nome: nomeCargoNormalizado,
@@ -398,7 +428,7 @@ export class EmployeesRepository {
 
                     loteFuncoesCriadas++;
 
-                    console.info("[APDATA SYNC] Função criada", {
+                    console.info("[APDATA SYNC] Função criada:", {
                       id: funcao.id,
                       codigoCargo: codigoCargoNormalizado,
                       nomeCargo: nomeCargoNormalizado,
@@ -414,21 +444,17 @@ export class EmployeesRepository {
                   if (chaveNomeFuncao) {
                     funcoesPorNome.set(chaveNomeFuncao, funcaoId);
                   }
-                } else if (!nomeCargoNormalizado) {
-                  loteFuncoesSemNome++;
-
-                  console.warn(
-                    "[APDATA SYNC] Cargo sem nome e sem função cadastrada",
+                } else {
+                  console.error(
+                    "[APDATA SYNC] Não foi possível resolver a função:",
                     {
                       contratadoId,
                       codigoCargo: codigoCargoNormalizado,
+                      nomeCargo: nomeCargoNormalizado,
                     },
                   );
                 }
               } else if (nomeCargoNormalizado && chaveNomeFuncao) {
-                /*
-                 * Fallback: o registro não contém código de cargo.
-                 */
                 funcaoId = funcoesPorNome.get(chaveNomeFuncao) ?? null;
 
                 if (!funcaoId) {
@@ -455,7 +481,7 @@ export class EmployeesRepository {
                     loteFuncoesCriadas++;
 
                     console.info(
-                      "[APDATA SYNC] Função criada sem código APDATA",
+                      "[APDATA SYNC] Função criada sem código APDATA:",
                       {
                         id: novaFuncao.id,
                         nomeCargo: nomeCargoNormalizado,
@@ -465,17 +491,13 @@ export class EmployeesRepository {
 
                   funcoesPorNome.set(chaveNomeFuncao, funcaoId);
                 }
-              } else if (!nomeCargoNormalizado) {
-                /*
-                 * Se a função não foi localizada pelo código e o nome
-                 * está ausente, não criamos um registro incompleto.
-                 * O colaborador existente manterá o funcaoId atual.
-                 */
+              } else {
                 loteFuncoesSemNome++;
 
-                console.warn("[APDATA SYNC] Cargo sem nome", {
+                console.warn("[APDATA SYNC] Colaborador sem dados de função:", {
                   contratadoId,
                   codigoCargo: codigoCargoNormalizado,
+                  nomeCargo: nomeCargoNormalizado,
                 });
               }
 
@@ -520,10 +542,6 @@ export class EmployeesRepository {
 
               /*
                * 4. Montar os dados sem sobrescrever campos ausentes.
-               *
-               * O spread condicional é importante: se a APDATA não
-               * retornar uma obra, função, e-mail ou situação, o valor
-               * atual do colaborador não será apagado.
                */
               const dados: Prisma.ColaboradorUpdateInput = {
                 nome: nomeColaborador,
@@ -550,8 +568,8 @@ export class EmployeesRepository {
               }
 
               /*
-               * 5. Compatibilidade com colaboradores que já estavam
-               * cadastrados usando o código corporativo APDATA-<id>.
+               * 5. Compatibilidade com colaboradores já cadastrados
+               * usando o código corporativo APDATA-<id>.
                */
               const codigoCorporativo = `APDATA-${contratadoId}`;
 
@@ -608,9 +626,6 @@ export class EmployeesRepository {
           },
         );
 
-        /*
-         * Contabiliza apenas os lotes confirmados pelo banco.
-         */
         criados += resultadoLote.criados;
         atualizados += resultadoLote.atualizados;
         ignorados += resultadoLote.ignorados;
@@ -656,6 +671,9 @@ export class EmployeesRepository {
       situacoesCriadas,
       funcoesCriadas,
       funcoesSemNome,
+      cargosDiferentesRecebidos: cargosRecebidos.size,
+      registrosSemObjetoCargo,
+      registrosSemNomeCargo,
     };
 
     console.info("[APDATA SYNC] Sincronização concluída", resultado);
@@ -663,8 +681,6 @@ export class EmployeesRepository {
     return resultado;
   }
 }
-
-type ApdataRecord = Record<string, unknown>;
 
 function texto(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -685,9 +701,27 @@ function campoAninhado(
 ): string | null {
   const nested = record[objectKey];
 
-  if (!nested || typeof nested !== "object") {
+  if (nested === null || typeof nested !== "object" || Array.isArray(nested)) {
     return null;
   }
 
   return texto((nested as ApdataRecord)[fieldKey]);
+}
+
+function obterDadosCargo(registro: ApdataRecord): DadosCargo {
+  const cargo = registro["cargo"];
+
+  const dadosCargo: ApdataRecord =
+    cargo !== null && typeof cargo === "object" && !Array.isArray(cargo)
+      ? (cargo as ApdataRecord)
+      : {};
+
+  return {
+    codigo:
+      campo(dadosCargo, "CAR_CdiCargo") ??
+      campo(registro, "CAR_CdiCargo") ??
+      campo(registro, "CON_CdiCargo"),
+
+    nome: campo(dadosCargo, "CAR_D1sCargo") ?? campo(registro, "CAR_D1sCargo"),
+  };
 }

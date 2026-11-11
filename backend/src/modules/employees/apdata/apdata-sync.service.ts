@@ -1,3 +1,4 @@
+
 import { prisma } from "../../../infrastructure/database/prisma.js";
 import type { AuditService } from "../../audit/audit.service.js";
 import type { EmployeesRepository } from "../employees.repository.js";
@@ -10,6 +11,20 @@ type DadosSituacao = {
   nome: string | null;
 };
 
+type DadosCargo = {
+  codigo: string | null;
+  nome: string | null;
+};
+
+type ResultadoFuncoes = {
+  recebidas: number;
+  cadastradas: number;
+  jaExistentes: number;
+  semCodigo: number;
+  semNome: number;
+  conflitos: number;
+};
+
 export class ApdataSyncService {
   constructor(
     private readonly apdata: ApdataService,
@@ -18,20 +33,37 @@ export class ApdataSyncService {
   ) {}
 
   async sincronizar(userId: string, requestId: string) {
+    // Busca todos os contratados da APDATA.
     const registros = await this.apdata.listarTodos(userId);
 
+    console.info("[APDATA SYNC] Total recebido:", registros.length);
+
+    // IMPORTANTE:
+    // Sincroniza as funções antes de filtrar os colaboradores.
+    // Assim, também serão cadastradas funções utilizadas por demitidos.
+    const funcoes = await this.sincronizarFuncoesApdata(registros);
+
+    // Mantém a regra atual de não sincronizar colaboradores demitidos.
     const registrosFiltrados = registros.filter(
       (registro) => textoCampo(registro, "CON_CdiSituacao") !== "2",
     );
 
-    console.info("[APDATA SYNC] Total recebido:", registros.length);
     console.info(
       "[APDATA SYNC] Total após excluir demitidos:",
       registrosFiltrados.length,
     );
 
-    const resultado =
+    // Sincroniza os colaboradores normalmente.
+    const resultadoColaboradores =
       await this.employees.sincronizarApdata(registrosFiltrados);
+
+    const resultado = {
+      ...resultadoColaboradores,
+      funcoes,
+    };
+
+    console.info("[APDATA SYNC] Resultado das funções:", funcoes);
+    console.info("[APDATA SYNC] Resultado final:", resultado);
 
     await this.audit.record({
       actorUserId: userId,
@@ -44,8 +76,159 @@ export class ApdataSyncService {
     return { data: resultado };
   }
 
+  /**
+   * Sincroniza o catálogo de funções encontradas nos registros da APDATA.
+   *
+   * Este método recebe todos os contratados, inclusive os demitidos.
+   * A identificação é feita preferencialmente pelo código da APDATA.
+   */
+  private async sincronizarFuncoesApdata(
+    registros: RegistroApdata[],
+  ): Promise<ResultadoFuncoes> {
+    const resultado: ResultadoFuncoes = {
+      recebidas: 0,
+      cadastradas: 0,
+      jaExistentes: 0,
+      semCodigo: 0,
+      semNome: 0,
+      conflitos: 0,
+    };
+
+    // Evita processar repetidamente o mesmo cargo durante a execução.
+    const cargosProcessados = new Set<string>();
+
+    for (const registro of registros) {
+      const { codigo, nome } = obterDadosCargo(registro);
+
+      if (!nome) {
+        resultado.semNome++;
+        continue;
+      }
+
+      const nomeNormalizado = nome.trim().replace(/\s+/g, " ");
+
+      if (!nomeNormalizado) {
+        resultado.semNome++;
+        continue;
+      }
+
+      resultado.recebidas++;
+
+      if (!codigo) {
+        resultado.semCodigo++;
+      }
+
+      const chave = codigo
+        ? `codigo:${codigo}`
+        : `nome:${nomeNormalizado.toLocaleLowerCase("pt-BR")}`;
+
+      if (cargosProcessados.has(chave)) {
+        continue;
+      }
+
+      cargosProcessados.add(chave);
+
+      // 1. Primeiro tenta localizar pelo código da APDATA.
+      if (codigo) {
+        const funcaoPorCodigo = await prisma.funcao.findUnique({
+          where: {
+            apdataCargoId: codigo,
+          },
+          select: {
+            id: true,
+            nome: true,
+            apdataCargoId: true,
+          },
+        });
+
+        if (funcaoPorCodigo) {
+          resultado.jaExistentes++;
+          continue;
+        }
+      }
+
+      // 2. Se não encontrou pelo código, tenta localizar pelo nome.
+      const funcaoPorNome = await prisma.funcao.findFirst({
+        where: {
+          nome: {
+            equals: nomeNormalizado,
+            mode: "insensitive",
+          },
+        },
+        select: {
+          id: true,
+          nome: true,
+          apdataCargoId: true,
+        },
+      });
+
+      if (funcaoPorNome) {
+        // Se a função existe, mas ainda não possui código APDATA,
+        // associa o código recebido.
+        if (codigo && !funcaoPorNome.apdataCargoId) {
+          await prisma.funcao.update({
+            where: {
+              id: funcaoPorNome.id,
+            },
+            data: {
+              apdataCargoId: codigo,
+            },
+          });
+
+          resultado.jaExistentes++;
+
+          console.info("[APDATA FUNÇÕES] Código associado à função:", {
+            nome: funcaoPorNome.nome,
+            codigo,
+          });
+
+          continue;
+        }
+
+        // Não associa um código diferente a uma função já vinculada.
+        if (
+          codigo &&
+          funcaoPorNome.apdataCargoId &&
+          funcaoPorNome.apdataCargoId !== codigo
+        ) {
+          resultado.conflitos++;
+
+          console.warn("[APDATA FUNÇÕES] Conflito de código:", {
+            nomeRecebido: nomeNormalizado,
+            codigoRecebido: codigo,
+            codigoExistente: funcaoPorNome.apdataCargoId,
+          });
+
+          continue;
+        }
+
+        resultado.jaExistentes++;
+        continue;
+      }
+
+      // 3. Não encontrou pelo código nem pelo nome: cadastra a função.
+      await prisma.funcao.create({
+        data: {
+          nome: nomeNormalizado,
+          apdataCargoId: codigo,
+          ativo: true,
+        },
+      });
+
+      resultado.cadastradas++;
+
+      console.info("[APDATA FUNÇÕES] Nova função cadastrada:", {
+        nome: nomeNormalizado,
+        codigo,
+      });
+    }
+
+    return resultado;
+  }
+
   async sincronizarAfastamentos(userId: string, requestId: string) {
     const registros = await this.apdata.listarAfastadosComHistorico(userId);
+
     const distribuicao = registros.reduce<Record<string, number>>(
       (acc, registro) => {
         const codigo = obterDadosSituacao(registro).codigo ?? "(vazio)";
@@ -116,7 +299,6 @@ export class ApdataSyncService {
         continue;
       }
 
-      // Procura por nome sem exigir que o cadastro esteja ativo.
       let situacaoAfastamento = await prisma.situacaoAfastamento.findFirst({
         where: {
           nome: {
@@ -130,7 +312,6 @@ export class ApdataSyncService {
         },
       });
 
-      // Se não existir, cria a situação local.
       if (!situacaoAfastamento) {
         situacaoAfastamento = await prisma.situacaoAfastamento.create({
           data: {
@@ -176,7 +357,6 @@ export class ApdataSyncService {
 
       let funcaoId = colaborador.funcaoId;
 
-      // Busca a função pelo código da APDATA.
       if (codigoCargoApdata) {
         const funcao = await prisma.funcao.findUnique({
           where: {
@@ -210,7 +390,6 @@ export class ApdataSyncService {
         continue;
       }
 
-      // Não cria outro afastamento se já houver um aberto.
       const existente = await prisma.afastamento.findFirst({
         where: {
           colaboradorId: colaborador.id,
@@ -227,8 +406,6 @@ export class ApdataSyncService {
         continue;
       }
 
-      const situacoesApdata = registro["situacoes"];
-      
       const { dataInicio: dataInicioApdata, dataFim: dataFimApdata } =
         obterDatasSituacao(registro);
 
@@ -354,11 +531,6 @@ function textoCampo(registro: RegistroApdata, chave: string): string | null {
   return texto || null;
 }
 
-type DadosCargo = {
-  codigo: string | null;
-  nome: string | null;
-};
-
 function obterDadosCargo(registro: RegistroApdata): DadosCargo {
   const cargo = registro["cargo"];
 
@@ -369,9 +541,12 @@ function obterDadosCargo(registro: RegistroApdata): DadosCargo {
 
   return {
     codigo:
-      textoCampo(registro, "CON_CdiCargo") ??
-      textoCampo(dadosCargo, "CAR_CdiCargo"),
+      textoCampo(dadosCargo, "CAR_CdiCargo") ??
+      textoCampo(registro, "CAR_CdiCargo") ??
+      textoCampo(registro, "CON_CdiCargo"),
 
-    nome: textoCampo(dadosCargo, "CAR_D1sCargo"),
+    nome:
+      textoCampo(dadosCargo, "CAR_D1sCargo") ??
+      textoCampo(registro, "CAR_D1sCargo"),
   };
 }

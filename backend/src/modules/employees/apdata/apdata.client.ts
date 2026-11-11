@@ -1,5 +1,6 @@
 import { env } from "../../../config/env.js";
 import type {
+  ApdataCargo,
   ApdataContratado,
   ApdataPage,
   ApdataTokenResponse,
@@ -22,6 +23,59 @@ export class ApdataClient {
 
   constructor() {
     this.apiOrigin = new URL(this.baseUrl).origin;
+  }
+
+  async listarCargos(userIdBaseSigob: string): Promise<ApdataCargo[]> {
+    if (!userIdBaseSigob.trim()) {
+      throw new Error("O user-id do SIGOB é obrigatório.");
+    }
+
+    // Busca todos os contratados, sem limitar aos ativos.
+    const contratados = await this.listarContratados(userIdBaseSigob, false);
+
+    const cargosPorCodigo = new Map<string, ApdataCargo>();
+
+    let registrosSemCargo = 0;
+
+    for (const contratado of contratados) {
+      const cargo = contratado["cargo"];
+
+      if (cargo === null || typeof cargo !== "object" || Array.isArray(cargo)) {
+        registrosSemCargo++;
+        continue;
+      }
+
+      const dadosCargo = cargo as Record<string, unknown>;
+
+      const codigo = String(
+        dadosCargo["CAR_CdiCargo"] ?? contratado["CON_CdiCargo"] ?? "",
+      ).trim();
+
+      const nome = String(dadosCargo["CAR_D1sCargo"] ?? "").trim();
+
+      if (!codigo || !nome) {
+        registrosSemCargo++;
+        continue;
+      }
+
+      // Evita cadastrar o mesmo cargo várias vezes.
+      if (!cargosPorCodigo.has(codigo)) {
+        cargosPorCodigo.set(codigo, {
+          CAR_CdiCargo: codigo,
+          CAR_D1sCargo: nome,
+        });
+      }
+    }
+
+    const resultado = Array.from(cargosPorCodigo.values());
+
+    console.info("[APDATA CARGOS] Resultado da consulta:", {
+      totalContratados: contratados.length,
+      totalCargosEncontrados: resultado.length,
+      registrosSemCargo,
+    });
+
+    return resultado;
   }
 
   private async accessToken(forceRefresh = false): Promise<string> {
@@ -210,7 +264,7 @@ export class ApdataClient {
       if (!body || !Array.isArray(body.data)) {
         throw new Error("Formato de resposta inesperado do APDATA.");
       }
-     
+
       resultado.push(...body.data);
 
       if (body.next_page_url === null) {

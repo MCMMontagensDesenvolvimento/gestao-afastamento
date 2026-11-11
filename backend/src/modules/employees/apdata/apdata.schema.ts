@@ -1,5 +1,5 @@
-
 export type ApdataContratado = Record<string, unknown>;
+export type ApdataCargo = Record<string, unknown>;
 
 export interface ApdataPage<T> {
   data: T[];
@@ -24,3 +24,4 @@ export interface ApdataListarContratadosOptions {
   userIdBaseSigob: string;
   apenasAtivos?: boolean;
 }
+
