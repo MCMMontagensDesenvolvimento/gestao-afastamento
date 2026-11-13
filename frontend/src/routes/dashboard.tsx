@@ -1,7 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { AlertTriangle, CalendarCheck, UserRoundCheck } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -192,23 +202,59 @@ function Dashboard() {
 
             <GraficoCard
               carregando={isLoading}
-              titulo="Duração dos afastamentos ativos"
-              descricao="Indicador aguardando validação da regra de cálculo."
+              titulo="Duração dos afastamentos"
+              descricao="Quantidade de afastamentos por duração em dias."
             >
-              <div
-                className="flex h-[260px] flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground sm:h-[300px]"
-                role="status"
-              >
-                <CalendarCheck className="size-6" aria-hidden="true" />
-                <p>
-                  {data?.duration.status === "pending_final_validation"
-                    ? "Cálculo de duração em validação."
-                    : "Indicador de duração indisponível."}
-                </p>
-                <p className="max-w-sm text-xs">
-                  Os dados serão apresentados após a definição da regra de cálculo.
-                </p>
-              </div>
+              {data?.duration.status === "available" && data.duration.distribution.length > 0 ? (
+                <ChartContainer config={chartConfig} className="h-[260px] w-full sm:h-[300px]">
+                  <BarChart
+                    data={data.duration.distribution}
+                    margin={{ top: 15, right: 15, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar
+                      dataKey="total"
+                      name="Afastamentos"
+                      fill="var(--color-quantidade)"
+                      radius={[5, 5, 0, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex h-[260px] flex-col items-center justify-center gap-3 text-center sm:h-[300px]">
+                  <CalendarCheck className="size-8 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum afastamento com duração válida encontrado.
+                  </p>
+                </div>
+              )}
+
+              {data?.duration.status === "available" && (
+                <div className="mt-3 border-t pt-3 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Duração média:{" "}
+                    <strong className="text-foreground">
+                      {data.duration.averageDays.toLocaleString("pt-BR")} dias
+                    </strong>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {data.duration.totalLeaves} afastamentos considerados
+                  </p>
+                </div>
+              )}
             </GraficoCard>
 
             <Card className="shadow-none">

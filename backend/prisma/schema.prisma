@@ -128,13 +128,14 @@ model RolePermission {
 }
 
 model Obra {
-  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nome          String        @unique(map: "uq_obras_nome") @db.VarChar(200)
-  ativo         Boolean       @default(true)
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  colaboradores Colaborador[]
-  afastamentos  Afastamento[]
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome                String        @unique(map: "uq_obras_nome") @db.VarChar(200)
+  apdataCentroCustoId String?       @unique(map: "uq_obras_apdata_centro_custo") @map("apdata_centro_custo_id") @db.VarChar(100)
+  ativo               Boolean       @default(true)
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  colaboradores       Colaborador[]
+  afastamentos        Afastamento[]
 
   @@index([ativo], map: "idx_obras_ativo")
   @@map("obras")
@@ -143,6 +144,7 @@ model Obra {
 model Funcao {
   id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nome          String        @unique(map: "uq_funcoes_nome") @db.VarChar(200)
+  apdataCargoId String?       @unique(map: "uq_funcoes_apdata_cargo") @map("apdata_cargo_id") @db.VarChar(100)
   ativo         Boolean       @default(true)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -204,19 +206,22 @@ model TipoDocumento {
 }
 
 model Colaborador {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  codigoCorporativo String        @unique(map: "uq_colaboradores_codigo_corporativo") @map("codigo_corporativo") @db.VarChar(100)
-  nome              String        @db.VarChar(200)
-  contato           String?       @db.VarChar(255)
-  obraId            String        @map("obra_id") @db.Uuid
-  funcaoId          String        @map("funcao_id") @db.Uuid
-  ativo             Boolean       @default(true)
-  sourceSystem      String        @default("MANUAL") @map("source_system") @db.VarChar(100)
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  obra              Obra          @relation(fields: [obraId], references: [id], onDelete: Restrict)
-  funcao            Funcao        @relation(fields: [funcaoId], references: [id], onDelete: Restrict)
-  afastamentos      Afastamento[]
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigoCorporativo  String        @unique(map: "uq_colaboradores_codigo_corporativo") @map("codigo_corporativo") @db.VarChar(100)
+  apdataContratadoId String?       @unique(map: "uq_colaboradores_apdata_contratado") @map("apdata_contratado_id") @db.VarChar(100)
+  nome               String        @db.VarChar(200)
+  contato            String?       @db.VarChar(255)
+  obraId             String?       @map("obra_id") @db.Uuid
+  funcaoId           String?       @map("funcao_id") @db.Uuid
+  ativo              Boolean       @default(true)
+  sourceSystem       String        @default("MANUAL") @map("source_system") @db.VarChar(100)
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  obra               Obra?         @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  funcao             Funcao?       @relation(fields: [funcaoId], references: [id], onDelete: Restrict)
+  afastamentos       Afastamento[]
+  apdataSituacaoId   String?       @map("apdata_situacao_id") @db.VarChar(100)
+  apdataSituacaoNome String?       @map("apdata_situacao_nome") @db.VarChar(200)
 
   @@index([nome], map: "idx_colaboradores_nome")
   @@index([obraId], map: "idx_colaboradores_obra_id")
@@ -229,7 +234,7 @@ model Afastamento {
   id                  String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   colaboradorId       String                 @map("colaborador_id") @db.Uuid
   obraId              String                 @map("obra_id") @db.Uuid
-  funcaoId            String                 @map("funcao_id") @db.Uuid
+  funcaoId            String?                @map("funcao_id") @db.Uuid
   situacaoId          String                 @map("situacao_id") @db.Uuid
   tipoBeneficioId     String?                @map("tipo_beneficio_id") @db.Uuid
   dataAfastamento     DateTime               @map("data_afastamento") @db.Date
@@ -244,7 +249,7 @@ model Afastamento {
   updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   colaborador         Colaborador            @relation(fields: [colaboradorId], references: [id], onDelete: Restrict)
   obra                Obra                   @relation(fields: [obraId], references: [id], onDelete: Restrict)
-  funcao              Funcao                 @relation(fields: [funcaoId], references: [id], onDelete: Restrict)
+  funcao              Funcao?                @relation(fields: [funcaoId], references: [id], onDelete: Restrict)
   situacao            SituacaoAfastamento    @relation(fields: [situacaoId], references: [id], onDelete: Restrict)
   tipoBeneficio       TipoBeneficio?         @relation(fields: [tipoBeneficioId], references: [id], onDelete: Restrict)
   createdBy           User                   @relation("AfastamentoCreator", fields: [createdById], references: [id], onDelete: Restrict)

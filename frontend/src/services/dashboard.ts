@@ -6,9 +6,34 @@ export interface DashboardData {
     expiredBenefits: number;
     expectedReturnsNext15Days: number;
   };
-  activeByObra: Array<{ obraId: string; obraNome: string; total: number }>;
-  newLeavesByMonth: Array<{ month: string; total: number }>;
-  duration: { status: "pending_final_validation"; series: [] };
+
+  activeByObra: Array<{
+    obraId: string;
+    obraNome: string;
+    total: number;
+  }>;
+
+  newLeavesByMonth: Array<{
+    month: string;
+    total: number;
+  }>;
+
+  duration:
+    | {
+        status: "available";
+        averageDays: number;
+        totalLeaves: number;
+        distribution: Array<{
+          days: number;
+          total: number;
+          label: string;
+        }>;
+      }
+    | {
+        status: "pending_final_validation";
+        series: [];
+      };
+
   priorities: Array<{
     type: "BENEFICIO" | "RETORNO";
     dueDate: string;

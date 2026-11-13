@@ -10,6 +10,7 @@ export interface ItemSimples {
 }
 
 export interface Colaborador {
+  cpf: string;
   id: string;
   codigo_interno: string;
   nome: string;
@@ -83,3 +84,38 @@ export function corDaClassificacao(c?: Classificacao) {
 
 export { configQuery } from "@/hooks/use-catalogs";
 export { colaboradoresQuery } from "@/hooks/use-employees";
+
+
+export type StatusAfastamento = "ativo" | "encerrado" | "aposentado";
+
+export function classificarAfastamento(afastamento: {
+  data_afastamento: string | null;
+  data_fim_beneficio: string | null;
+  situacoes_afastamento?: {
+    nome?: string | null;
+  } | null;
+}): StatusAfastamento {
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const situacao = afastamento.situacoes_afastamento?.nome
+    ?.trim()
+    .toLowerCase();
+
+  // Aposentados têm prioridade sobre as datas
+  if (situacao === "aposentado") {
+    return "aposentado";
+  }
+
+  const inicio = afastamento.data_afastamento?.slice(0, 10);
+  const fim = afastamento.data_fim_beneficio?.slice(0, 10);
+
+  if (fim && fim < hoje) {
+    return "encerrado";
+  }
+
+  if (inicio && fim && inicio <= hoje && fim >= hoje) {
+    return "ativo";
+  }
+
+  return "encerrado";
+}
