@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth/session";
 import { ApiError, errorMessage } from "@/lib/api/errors";
 import { afastamentoQuery } from "@/hooks/use-leaves";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, History } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EstadoErro, EstadoVazio, Secao } from "@/components/padroes";
 
@@ -12,7 +12,10 @@ import { AfastamentoDocumentos } from "@/components/AfastamentoDocumentos";
 import { AfastamentoHistorico } from "@/components/AfastamentoHistorico";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { corDaClassificacao, formatarData } from "@/lib/dados";
+import { corDaClassificacao, formatarData, classificarAfastamento } from "@/lib/dados";
+import { HistoricoSituacoesApdata } from "@/components/HistoricoSituacoesApdata";
+
+
 
 export const Route = createFileRoute("/afastamentos/$id/")({
   head: () => ({
@@ -39,6 +42,7 @@ function PaginaDetalhe() {
     ...afastamentoQuery(id),
     enabled: can("leaves.read"),
   });
+  
 
   const voltar = (
     <Button asChild variant="outline">
@@ -108,13 +112,23 @@ function PaginaDetalhe() {
       titulo={data.colaboradores?.nome ?? "Afastamento"}
       descricao={data.colaboradores?.codigo_interno ?? ""}
       acoes={
-        can("leaves.update") ? (
-          <Button asChild>
-            <Link to="/afastamentos/$id/editar" params={{ id }}>
-              <Pencil className="size-4" /> Editar afastamento
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link to="/">
+              <ArrowLeft className="size-4" />
+              Voltar 
             </Link>
           </Button>
-        ) : null
+
+          {can("leaves.update") ? (
+            <Button asChild>
+              <Link to="/afastamentos/$id/editar" params={{ id }}>
+                <Pencil className="size-4" />
+                Editar afastamento
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       }
     >
       <div className="rounded-md border border-border bg-card p-4 sm:p-5">
@@ -131,7 +145,10 @@ function PaginaDetalhe() {
           </span>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-4">
-          <Campo rotulo="Afastamento" valor={formatarData(data.data_afastamento)} />
+          <Campo
+            rotulo="Afastamento"
+            valor={`${formatarData(data.data_afastamento)} até ${formatarData(data.data_fim_beneficio)}`}
+          />{" "}
           <Campo rotulo="Fim do benefício" valor={formatarData(data.data_fim_beneficio)} />
           <Campo rotulo="Retorno previsto" valor={formatarData(data.data_retorno_previsto)} />
         </dl>
@@ -163,7 +180,20 @@ function PaginaDetalhe() {
           value="historico"
           className="rounded-md border border-border bg-card p-4 sm:p-5"
         >
-          {can("progress.read") ? <AfastamentoHistorico afastamentoId={id} /> : null}
+          {data.colaboradores?.nome ? (
+            <HistoricoSituacoesApdata colaboradorNome={data.colaboradores.nome} />
+          ) : (
+            <EstadoVazio
+              titulo="Colaborador não identificado."
+              descricao="Não foi possível localizar o nome do colaborador deste afastamento."
+            />
+          )}
+
+          {can("progress.read") ? (
+            <div className="mt-6 border-t border-border pt-5">
+              <AfastamentoHistorico afastamentoId={id} />
+            </div>
+          ) : null}
         </TabsContent>
         <TabsContent
           value="documentos"
@@ -184,3 +214,5 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
     </div>
   );
 }
+
+

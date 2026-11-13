@@ -1,14 +1,20 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { employeesPageQuery } from "@/hooks/use-employees";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { History, Loader2, Pencil, Plus, Power } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/lib/auth/session";
 import { useServerPagination } from "@/hooks/use-server-pagination";
-import { employeesPageQuery, employeeHistoryQuery } from "@/hooks/use-employees";
 import { configQuery } from "@/hooks/use-catalogs";
-import { createEmployee, updateEmployee, setEmployeeActive } from "@/services/employees";
+import {
+  createEmployee,
+  updateEmployee,
+  setEmployeeActive,
+  listarContratadosApdata,
+  sincronizarContratadosApdata,
+} from "@/services/employees";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,8 +95,53 @@ const FORM_VAZIO: Form = {
   funcao_id: "",
 };
 
+function textoApdata(valor: unknown): string {
+  if (typeof valor === "string" || typeof valor === "number") {
+    return String(valor);
+  }
+
+  if (valor && typeof valor === "object") {
+    if ("CAR_D1sCargo" in valor) {
+      return textoApdata(valor.CAR_D1sCargo);
+    }
+
+    if ("SIT_D1sSituacao" in valor) {
+      return textoApdata(valor.SIT_D1sSituacao);
+    }
+
+    if ("CCU_D1sCentroCusto" in valor) {
+      return textoApdata(valor.CCU_D1sCentroCusto);
+    }
+
+    if ("FOL_D1sFolha" in valor) {
+      return textoApdata(valor.FOL_D1sFolha);
+    }
+  }
+
+  return "—";
+}
+
+type SituacaoApdata = {
+  CST_CdiContratado: string;
+  CST_DtdSituacaoInicio: string;
+  CST_DtdSituacaoFim: string | null;
+  CST_CdiSituacao: string;
+  situacao?: {
+    SIT_CdiSituacao: number;
+    SIT_D1sSituacao: string;
+  };
+};
+
+type ContratadoApdata = {
+  CON_NusCICNumero: string;
+  CON_CdiContratado: number | string;
+  CON_DssNome: string;
+  situacoes?: SituacaoApdata[];
+};
+
 function PaginaColaboradores() {
   const queryClient = useQueryClient();
+
   const { can } = useAuth();
   const pagination = useServerPagination();
   const obrasQuery = useQuery({ ...configQuery("obras", false), enabled: can("settings.manage") });
@@ -99,6 +150,22 @@ function PaginaColaboradores() {
     enabled: can("settings.manage"),
   });
   const obras = obrasQuery.data ?? [];
+  const sincronizarApdata = useMutation({
+    mutationFn: sincronizarContratadosApdata,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["leaves"] });
+      await queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      await obrasQuery.refetch();
+      await funcoesQuery.refetch();
+
+      toast.success("Sincronização do APDATA concluída.");
+    },
+    onError: (erro: Error) => {
+      toast.error(mensagemAmigavel(erro, "Não foi possível sincronizar o APDATA."));
+    },
+  });
   const funcoes = funcoesQuery.data ?? [];
 
   const [busca, setBusca] = useState("");
@@ -109,6 +176,39 @@ function PaginaColaboradores() {
   const [editando, setEditando] = useState<Colaborador | null>(null);
   const [form, setForm] = useState<Form>(FORM_VAZIO);
   const [confirmar, setConfirmar] = useState<Colaborador | null>(null);
+  const apdataQuery = useQuery({
+    queryKey: ["employees", "apdata", "contratados", true],
+    queryFn: () => listarContratadosApdata(true),
+    enabled: can("employees.read"),
+  });
+
+  const respostaApdata: unknown = apdataQuery.data;
+
+  const contratadosApdata: ContratadoApdata[] = (() => {
+    const resposta = respostaApdata as
+      ContratadoApdata[] | { data?: ContratadoApdata[] } | null | undefined;
+
+    if (Array.isArray(resposta)) return resposta;
+
+    if (resposta && "data" in resposta && Array.isArray(resposta.data)) {
+      return resposta.data;
+    }
+
+    return [];
+  })();
+
+  const normalizarNome = (nome: string) =>
+    nome
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const colaboradorApdata = historico
+    ? contratadosApdata.find(
+        (item) => normalizarNome(item.CON_DssNome) === normalizarNome(historico.nome),
+      )
+    : undefined;
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     ...employeesPageQuery({
@@ -224,11 +324,23 @@ function PaginaColaboradores() {
     <AppLayout
       titulo="Colaboradores"
       descricao="Cadastro de colaboradores da empresa."
+
       acoes={
         can("employees.manage") ? (
-          <Button onClick={abrirNovo}>
-            <Plus className="size-4" /> Novo colaborador
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => sincronizarApdata.mutate()}
+              disabled={sincronizarApdata.isPending}
+            >
+              {sincronizarApdata.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {sincronizarApdata.isPending ? "Sincronizando APDATA..." : "Sincronizar APDATA"}
+            </Button>
+
+            <Button onClick={abrirNovo}>
+              <Plus className="size-4" /> Novo colaborador
+            </Button>
+          </div>
         ) : null
       }
     >
@@ -324,7 +436,13 @@ function PaginaColaboradores() {
                       · {c.funcoes?.nome ?? "—"}
                     </p>
                     <div className="mt-2">
-                      <StatusBadge ativo={c.ativo} />
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                          c.ativo ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {c.ativo ? "Ativo" : "Inativo"}
+                      </span>
                     </div>
                   </div>
                   <AcoesLinha acoes={acoesDe(c)} compacto />
@@ -335,8 +453,8 @@ function PaginaColaboradores() {
               <Table containerClassName={TABELA_CONTAINER}>
                 <TableHeader className={CABECALHO_FIXO}>
                   <TableRow>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Nome</TableHead>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Colaborador</TableHead>
                     <TableHead className="hidden lg:table-cell">Contato</TableHead>
                     <TableHead>Obra</TableHead>
                     <TableHead className="hidden lg:table-cell">Função</TableHead>
@@ -355,7 +473,13 @@ function PaginaColaboradores() {
                         {c.funcoes?.nome ?? "—"}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge ativo={c.ativo} />
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                            c.ativo ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {c.ativo ? "Ativo" : "Inativo"}
+                        </span>{" "}
                       </TableCell>
                       <TableCell className="text-right">
                         <AcoesLinha acoes={acoesDe(c)} />
@@ -369,6 +493,71 @@ function PaginaColaboradores() {
           </>
         )}
       </div>
+
+      {/* <section className="mt-8 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Contratados da APDATA</h2>
+          <p className="text-sm text-muted-foreground">
+            Colaboradores recebidos da integração externa. Consulta somente leitura.
+          </p>
+        </div>
+
+        {apdataQuery.isPending ? (
+          <div className="rounded-md border border-border bg-card p-4">
+            <TabelaSkeleton />
+          </div>
+        ) : apdataQuery.isError ? (
+          <EstadoErro
+            mensagem={mensagemAmigavel(
+              apdataQuery.error,
+              "Não foi possível carregar os contratados da APDATA.",
+            )}
+            aoTentarNovamente={() => void apdataQuery.refetch()}
+          />
+        ) : apdataQuery.data.data.length === 0 ? (
+          <EstadoVazio
+            titulo="Nenhum contratado encontrado na APDATA."
+            descricao="Não há contratados ativos para exibir."
+          />
+        ) : (
+          <div className="overflow-hidden rounded-md border border-border bg-card">
+            <Table containerClassName={TABELA_CONTAINER}>
+              <TableHeader className={CABECALHO_FIXO}>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Matrícula / Código</TableHead>
+                  <TableHead>Cargo</TableHead>
+                  <TableHead>Situação</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {apdataQuery.data.data.map((item, index) => {
+                  const nome = textoApdata(item["CON_DssNome"]);
+
+                  const codigo = textoApdata(item["CON_CdiContratado"]);
+
+                  const cargo = textoApdata(item["cargo"]);
+
+                  const situacao = textoApdata(item["situacao"]);
+
+                  return (
+                    <TableRow key={`${codigo}-${index}`}>
+                      <TableCell className="max-w-[280px] truncate font-medium">{nome}</TableCell>
+
+                      <TableCell className="font-mono text-xs">{codigo}</TableCell>
+
+                      <TableCell>{cargo}</TableCell>
+
+                      <TableCell>{situacao}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section> */}
 
       <Dialog
         open={aberto}
@@ -518,80 +707,106 @@ function PaginaColaboradores() {
           confirmar && alternarAtivo.mutate(confirmar, { onSuccess: () => setConfirmar(null) })
         }
       />
-      {historico ? (
-        <HistoricoColaborador colaborador={historico} aoFechar={() => setHistorico(null)} />
-      ) : null}
+      {historico && (
+        <HistoricoColaborador
+          colaborador={historico}
+          situacoes={colaboradorApdata?.situacoes ?? []}
+          carregando={apdataQuery.isLoading}
+          erro={apdataQuery.error}
+          aoTentarNovamente={() => apdataQuery.refetch()}
+          aoFechar={() => setHistorico(null)}
+        />
+      )}
     </AppLayout>
   );
 }
 
 function HistoricoColaborador({
   colaborador,
+  situacoes,
+  carregando,
+  erro,
+  aoTentarNovamente,
   aoFechar,
 }: {
   colaborador: Colaborador;
+  situacoes: SituacaoApdata[];
+  carregando: boolean;
+  erro: Error | null;
+  aoTentarNovamente: () => void;
   aoFechar: () => void;
 }) {
-  const pagination = useServerPagination();
-  const query = useQuery(
-    employeeHistoryQuery(colaborador.id, { page: pagination.pagina, perPage: pagination.tamanho }),
+  function dataApdata(data: string | null) {
+    if (!data) return "Atual";
+
+    const dataParte = data.split(" ")[0];
+
+    if (!dataParte) return "Data inválida";
+
+    const partes = dataParte.split("-");
+
+    if (partes.length !== 3) return "Data inválida";
+
+    const [ano, mes, dia] = partes;
+
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  const historicoOrdenado = [...situacoes].sort((a, b) =>
+    b.CST_DtdSituacaoInicio.localeCompare(a.CST_DtdSituacaoInicio),
   );
+
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) aoFechar();
-      }}
-    >
+    <Dialog open onOpenChange={(open) => !open && aoFechar()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Histórico — {colaborador.nome}</DialogTitle>
+          <DialogTitle>Histórico de situações — {colaborador.nome}</DialogTitle>
         </DialogHeader>
-        {query.isLoading ? (
+
+        {carregando ? (
           <TabelaSkeleton />
-        ) : query.isError ? (
-          <EstadoErro
-            mensagem={mensagemAmigavel(query.error)}
-            aoTentarNovamente={() => query.refetch()}
+        ) : erro ? (
+          <EstadoErro mensagem={mensagemAmigavel(erro)} aoTentarNovamente={aoTentarNovamente} />
+        ) : historicoOrdenado.length === 0 ? (
+          <EstadoVazio
+            titulo="Nenhum histórico encontrado."
+            descricao="Não foram encontradas situações deste colaborador no APDATA."
           />
-        ) : !query.data?.data.length ? (
-          <EstadoVazio titulo="Nenhum afastamento registrado." />
         ) : (
-          <>
-            <ul className="divide-y divide-border">
-              {query.data.data.map((item) => (
-                <li key={item.id} className="space-y-2 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">
-                        Afastamento em {formatarData(item.dataAfastamento)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {item.obra.nome} · {item.funcao.nome}
-                      </p>
-                    </div>
-                    <Button asChild variant="outline" size="sm">
-                      <Link to="/afastamentos/$id" params={{ id: item.id }}>
-                        Ver detalhe
-                      </Link>
-                    </Button>
-                  </div>
-                  <p className="text-sm">
-                    {item.situacao.nome} · {item.tipoBeneficio?.nome ?? "Sem benefício informado"}
+          <ol className="relative ml-2 space-y-4 border-l-2 border-border pl-5">
+            {historicoOrdenado.map((item, index) => (
+              <li
+                key={`${item.CST_CdiSituacao}-${item.CST_DtdSituacaoInicio}-${index}`}
+                className="relative rounded-md border border-border bg-card p-4"
+              >
+                <span className="absolute -left-[27px] top-5 size-3 rounded-full border-2 border-primary bg-background" />
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-sm">
+                    {item.situacao?.SIT_D1sSituacao ?? "Situação não identificada"}
+                  </strong>
+
+                  {!item.CST_DtdSituacaoFim && (
+                    <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                      Atual
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+                  <p>
+                    <strong className="text-foreground">Data de início:</strong>{" "}
+                    {dataApdata(item.CST_DtdSituacaoInicio)}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Retorno previsto: {formatarData(item.dataRetornoPrevista)} · Efetivo:{" "}
-                    {formatarData(item.dataRetornoEfetiva)}
+
+                  <p>
+                    <strong className="text-foreground">Data de término:</strong>{" "}
+                    {dataApdata(item.CST_DtdSituacaoFim)}
                   </p>
-                </li>
-              ))}
-            </ul>
-            <Paginacao
-              {...pagination}
-              total={query.data.meta.total}
-              totalPaginas={query.data.meta.totalPages}
-            />
-          </>
+                </div>
+              </li>
+            ))}
+          </ol>
         )}
       </DialogContent>
     </Dialog>
