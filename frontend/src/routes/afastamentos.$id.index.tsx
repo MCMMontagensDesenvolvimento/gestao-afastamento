@@ -12,8 +12,10 @@ import { AfastamentoDocumentos } from "@/components/AfastamentoDocumentos";
 import { AfastamentoHistorico } from "@/components/AfastamentoHistorico";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { corDaClassificacao, formatarData } from "@/lib/dados";
+import { corDaClassificacao, formatarData, classificarAfastamento } from "@/lib/dados";
 import { HistoricoSituacoesApdata } from "@/components/HistoricoSituacoesApdata";
+
+
 
 export const Route = createFileRoute("/afastamentos/$id/")({
   head: () => ({
@@ -40,6 +42,7 @@ function PaginaDetalhe() {
     ...afastamentoQuery(id),
     enabled: can("leaves.read"),
   });
+  
 
   const voltar = (
     <Button asChild variant="outline">
@@ -211,3 +214,5 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
     </div>
   );
 }
+
+

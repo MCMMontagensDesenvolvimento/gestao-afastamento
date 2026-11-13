@@ -209,7 +209,7 @@ function PaginaColaboradores() {
         (item) => normalizarNome(item.CON_DssNome) === normalizarNome(historico.nome),
       )
     : undefined;
- 
+
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     ...employeesPageQuery({
       page: pagination.pagina,
@@ -436,7 +436,13 @@ function PaginaColaboradores() {
                       · {c.funcoes?.nome ?? "—"}
                     </p>
                     <div className="mt-2">
-                      <StatusBadge ativo={c.ativo} />
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                          c.ativo ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {c.ativo ? "Ativo" : "Inativo"}
+                      </span>
                     </div>
                   </div>
                   <AcoesLinha acoes={acoesDe(c)} compacto />
@@ -467,7 +473,13 @@ function PaginaColaboradores() {
                         {c.funcoes?.nome ?? "—"}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge ativo={c.ativo} />
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                            c.ativo ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {c.ativo ? "Ativo" : "Inativo"}
+                        </span>{" "}
                       </TableCell>
                       <TableCell className="text-right">
                         <AcoesLinha acoes={acoesDe(c)} />
