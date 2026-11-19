@@ -67,17 +67,55 @@ const envSchema = z
       )
       .pipe(z.array(z.string().min(1)).min(1)),
     BOOTSTRAP_ADMIN_EMAIL: optionalText,
-    STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+    STORAGE_DRIVER: z.enum(["local", "azure"]).default("local"),
     LOCAL_STORAGE_PATH: z.string().trim().min(1).default("/app/storage"),
-    S3_ENDPOINT: optionalText,
-    S3_REGION: optionalText,
-    S3_BUCKET: optionalText,
-    S3_ACCESS_KEY_ID: optionalText,
-    S3_SECRET_ACCESS_KEY: optionalText,
-    S3_FORCE_PATH_STYLE: booleanFromString,
+    AZURE_STORAGE_NAME: optionalText,
+    AZURE_STORAGE_KEY: optionalText,
+    AZURE_STORAGE_CONTAINER: optionalText,
     MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10_485_760),
   })
   .superRefine((value, context) => {
+    if (value.STORAGE_DRIVER === "azure") {
+      const requiredAzureFields = [
+        "AZURE_STORAGE_NAME",
+        "AZURE_STORAGE_KEY",
+        "AZURE_STORAGE_CONTAINER",
+      ] as const;
+
+      for (const field of requiredAzureFields) {
+        if (!value[field]) {
+          context.addIssue({
+            code: "custom",
+            path: [field],
+            message:
+              `${field} é obrigatória quando STORAGE_DRIVER=azure.`,
+          });
+        }
+      }
+
+      if (
+        value.AZURE_STORAGE_NAME &&
+        !/^[a-z0-9]{3,24}$/.test(value.AZURE_STORAGE_NAME)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["AZURE_STORAGE_NAME"],
+          message: "Nome da Storage Account inválido.",
+        });
+      }
+
+      if (
+        value.AZURE_STORAGE_CONTAINER &&
+        value.AZURE_STORAGE_CONTAINER !== "gestao-afastamento"
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["AZURE_STORAGE_CONTAINER"],
+          message: "O container deve ser gestao-afastamento.",
+        });
+      }
+    }
+
     const apdataValues = [
       value.APDATA_BASE_URL,
       value.APDATA_CLIENT_ID,
