@@ -1,16 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { listarContratadosApdata } from "@/services/employees";
+import { listarContratadosApdata, type ApdataSituacao } from "@/services/employees";
 import { EstadoErro, EstadoVazio, ListaSkeleton } from "@/components/padroes";
 import { errorMessage } from "@/lib/api/errors";
-
-type SituacaoApdata = {
-  CST_DtdSituacaoInicio: string;
-  CST_DtdSituacaoFim: string | null;
-  CST_CdiSituacao: number;
-  situacao?: {
-    SIT_D1sSituacao: string;
-  };
-};
 
 function normalizarNome(nome: string) {
   return nome
@@ -24,6 +15,9 @@ function formatarDataApdata(data: string | null) {
   if (!data) return "Atual";
 
   const dataParte = data.split(" ")[0];
+
+  if (!dataParte) return "Data inválida";
+
   const partes = dataParte.split("-");
 
   if (partes.length !== 3) return "Data inválida";
@@ -50,7 +44,7 @@ export function HistoricoSituacoesApdata({
       normalizarNome(colaboradorNome),
   );
 
-  const situacoes: SituacaoApdata[] = colaborador?.situacoes ?? [];
+  const situacoes: ApdataSituacao[] = colaborador?.situacoes ?? [];
 
   const ordenadas = [...situacoes].sort((a, b) =>
     b.CST_DtdSituacaoInicio.localeCompare(a.CST_DtdSituacaoInicio),

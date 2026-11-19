@@ -1,4 +1,5 @@
 import { env } from "../../../config/env.js";
+import { AppError } from "../../../shared/errors/app-error.js";
 import type {
   ApdataCargo,
   ApdataContratado,
@@ -12,17 +13,30 @@ const TOKEN_EXPIRY_BUFFER_MS = 30_000;
 const DEFAULT_WITH = "cargo,maoObra,folha,situacao,centroCusto,situacoes";
 
 export class ApdataClient {
-  private readonly baseUrl = env.APDATA_BASE_URL!.replace(/\/+$/, "");
+  private get baseUrl(): string {
+    if (
+      !env.APDATA_BASE_URL ||
+      !env.APDATA_CLIENT_ID ||
+      !env.APDATA_CLIENT_SECRET
+    ) {
+      throw new AppError(
+        503,
+        "APDATA_NOT_CONFIGURED",
+        "A integração com o ApData ainda não está configurada.",
+      );
+    }
+
+    return env.APDATA_BASE_URL.replace(/\/+$/, "");
+  }
+
   private readonly timeoutMs = REQUEST_TIMEOUT_MS;
 
   private token: string | null = null;
   private tokenExpiresAt = 0;
   private tokenPromise: Promise<string> | null = null;
 
-  private readonly apiOrigin: string;
-
-  constructor() {
-    this.apiOrigin = new URL(this.baseUrl).origin;
+  private get apiOrigin(): string {
+    return new URL(this.baseUrl).origin;
   }
 
   async listarCargos(userIdBaseSigob: string): Promise<ApdataCargo[]> {
@@ -30,7 +44,6 @@ export class ApdataClient {
       throw new Error("O user-id do SIGOB é obrigatório.");
     }
 
-    // Busca todos os contratados, sem limitar aos ativos.
     const contratados = await this.listarContratados(userIdBaseSigob, false);
 
     const cargosPorCodigo = new Map<string, ApdataCargo>();
@@ -47,11 +60,11 @@ export class ApdataClient {
 
       const dadosCargo = cargo as Record<string, unknown>;
 
-      const codigo = String(
+      const codigo = normalizeText(
         dadosCargo["CAR_CdiCargo"] ?? contratado["CON_CdiCargo"] ?? "",
-      ).trim();
+      );
 
-      const nome = String(dadosCargo["CAR_D1sCargo"] ?? "").trim();
+      const nome = normalizeText(dadosCargo["CAR_D1sCargo"] ?? "");
 
       if (!codigo || !nome) {
         registrosSemCargo++;
@@ -293,4 +306,17 @@ export class ApdataClient {
       (colaborador) => colaborador.FOL_D1sFolha === "MEN - AFASTADOS",
     );
   }
+}
+
+function normalizeText(value: unknown): string {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value).trim();
+  }
+
+  return "";
 }

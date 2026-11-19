@@ -10,7 +10,7 @@ export interface ItemSimples {
 }
 
 export interface Colaborador {
-  cpf: string;
+  cpf?: string;
   id: string;
   codigo_interno: string;
   nome: string;

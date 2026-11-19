@@ -1,31 +1,14 @@
-# Estrutura portável. Host, domínio, proxy, secrets e provider de storage
-# permanecem pendentes e devem ser fornecidos pelo ambiente de produção.
 name: ${COMPOSE_PROJECT_NAME:-gestao-afastados}
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      TZ: ${TZ:-America/Recife}
-      POSTGRES_DB: ${POSTGRES_DB:-gestao_afastados}
-      POSTGRES_USER: ${POSTGRES_USER:-gestao_afastados}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no ambiente de producao}
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [app]
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
+      target: runtime
     restart: unless-stopped
     environment:
+      TZ: ${TZ:-America/Recife}
       NODE_ENV: production
       PORT: 3000
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?Defina FRONTEND_ORIGIN no ambiente de producao}
@@ -42,7 +25,10 @@ services:
       MICROSOFT_TENANT_IDS: ${MICROSOFT_TENANT_IDS:?Defina MICROSOFT_TENANT_IDS no ambiente de producao}
       MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:?Defina MICROSOFT_REDIRECT_URI no ambiente de producao}
       MICROSOFT_ALLOWED_EMAIL_DOMAINS: mcm.eng.br,mcmmontagens.com.br
-      STORAGE_DRIVER: ${STORAGE_DRIVER:?Defina STORAGE_DRIVER no ambiente de producao}
+      APDATA_BASE_URL: ${APDATA_BASE_URL:-}
+      APDATA_CLIENT_ID: ${APDATA_CLIENT_ID:-}
+      APDATA_CLIENT_SECRET: ${APDATA_CLIENT_SECRET:-}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       LOCAL_STORAGE_PATH: /app/storage
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-}
@@ -51,25 +37,24 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
       MAX_UPLOAD_BYTES: 10485760
-    expose: ["3000"]
+    expose:
+      - "3000"
     volumes:
       - uploads_data:/app/storage
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/health/db').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
         ]
       interval: 10s
       timeout: 5s
       retries: 10
-    networks: [app]
-
+      start_period: 15s
+    networks:
+      - app
   frontend:
     build:
       context: ./frontend
@@ -77,22 +62,29 @@ services:
       args:
         VITE_API_BASE_URL: /api/v1
     restart: unless-stopped
-    expose: ["80"]
+    expose:
+      - "80"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
       test:
-        ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health.html"]
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1/health.html",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
-    networks: [app]
-
+      start_period: 5s
+    networks:
+      - app
 volumes:
-  db_data:
   uploads_data:
-
 networks:
   app:
     driver: bridge

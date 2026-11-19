@@ -526,7 +526,16 @@ function textoCampo(registro: RegistroApdata, chave: string): string | null {
     return null;
   }
 
-  const texto = String(valor).trim();
+  if (
+      typeof valor !== "string" &&
+      typeof valor !== "number" &&
+      typeof valor !== "boolean" &&
+      typeof valor !== "bigint"
+    ) {
+      return null;
+    }
+
+    const texto = String(valor).trim();
 
   return texto || null;
 }

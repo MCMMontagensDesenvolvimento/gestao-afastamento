@@ -685,6 +685,15 @@ export class EmployeesRepository {
 function texto(value: unknown): string | null {
   if (value === null || value === undefined) return null;
 
+  if (
+    typeof value !== "string" &&
+    typeof value !== "number" &&
+    typeof value !== "boolean" &&
+    typeof value !== "bigint"
+  ) {
+    return null;
+  }
+
   const result = String(value).trim();
 
   return result || null;

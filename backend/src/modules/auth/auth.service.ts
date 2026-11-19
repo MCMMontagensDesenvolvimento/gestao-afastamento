@@ -86,7 +86,10 @@ export function hashToken(token: string): string {
 
 function normalizeReturnTo(value?: string): string {
   if (!value) return "/";
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value)) {
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\") || Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })) {
     throw new AppError(422, "INVALID_RETURN_TO", "O destino após login deve ser uma rota interna.");
   }
   const destination = new URL(value, env.FRONTEND_ORIGIN);
